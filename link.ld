@@ -5,22 +5,22 @@ OUTPUT_FORMAT(elf32-i386)
 ENTRY(start)
 
 SECTIONS{
-	. = 0x00100000;
+	. = 0xC0100000;
 	
-	.text :{
+	.text : AT(ADDR(.text) - 0xC0000000) {
 		*(.multiboot)
-        	*(.text)
+        *(.text)
 	}
 	
-	.rodata ALIGN (4096) : {
+	.rodata ALIGN (4096) : AT(ADDR(.rodata) - 0xC0000000) {
 		*(.rodata)
 	}
 	
-	.data ALIGN (4096) : {
+	.data ALIGN (4096) : AT(ADDR(.data) - 0xC0000000) {
 		*(.data)
 	}
 	
-	.bss : {
+	.bss : AT(ADDR(.bss) - 0xC0000000) {
 		*(COMMON)
 		*(.bss)
 	}

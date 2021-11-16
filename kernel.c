@@ -4,10 +4,10 @@
 #define ROW 25
 #define COL 80
 
-extern setup_gdt(void);
-extern setup_idt(void);
+extern void setup_gdt(void);
+extern void setup_idt(void);
 
-char *vidptr = (char*)0xb8000;
+char *vidptr = (char*)0xc00b8000;
 unsigned int xpos = 0;
 unsigned int ypos = 0;
 
@@ -21,6 +21,7 @@ void *memset(void* dst, int c, unsigned long size);
 
 void kmain(unsigned long magic, unsigned long addr) {
     memset(vidptr, 0, ROW * COL * 2);
+    kprintf("coucou\n");
 
     if (magic != MULTIBOOT_BOOTLOADER_MAGIC) {
         kprintf("ERROR: magic number is not correct\n");
