@@ -17,6 +17,7 @@ start:
     mov esp, stack_space	;set stack pointer
     push ebx
     push eax
+
     call kmain
 loop:
     ;hlt		 	;halt the CPU
@@ -28,7 +29,12 @@ extern gdt_base
 load_gdt:
 	lgdt [gdt_base]
 
-	jmp 0x08:.load_gdt_cs_jmp2 ; Far Jumpt to load code segment
+	; enable protected mode
+	mov eax, cr0
+	or al, 1
+	mov cr0, eax
+
+	jmp 0x08:.load_gdt_cs_jmp2 ; Far Jump to load code segment
 .load_gdt_cs_jmp2:
 	
 	mov ax, 0x10 ; Load data segmement selectors.
@@ -44,3 +50,5 @@ section .bss
     align 16
     resb 8192		;8KB for stack
 stack_space:
+    resb 4096
+table_768:
