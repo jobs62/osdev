@@ -34,8 +34,9 @@ higher_half:
     push eax
 
     call kmain
+
 loop:
-    ;hlt		 	;halt the CPU
+    pause		 	;halt the CPU
     jmp loop
 
 global load_gdt
@@ -66,7 +67,7 @@ section .bss
     resb 8192		;8KB for stack
 stack_space:
 
-
+global PAGE_DIRECTORY
 section .data
     align 4096
 PAGE_TABLE:
