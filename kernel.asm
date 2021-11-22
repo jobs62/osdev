@@ -68,6 +68,7 @@ section .bss
 stack_space:
 
 global PAGE_DIRECTORY
+global PAGE_TABLE
 section .data
     align 4096
 PAGE_TABLE:

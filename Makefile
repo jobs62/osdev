@@ -1,6 +1,6 @@
 AS=nasm
-CC=gcc
-LD=ld
+CC=i386-elf-gcc
+LD=i386-elf-ld
 
 C_SRC= kernel.c gdt.c interrupt.c
 ASM_SRC= kernel.asm interrupt.asm
@@ -32,7 +32,7 @@ myos.iso: myos.bin
 	grub-mkrescue -o myos.iso isodir
 
 run: myos.bin
-	qemu-system-i386 -kernel myos.bin
+	qemu-system-i386 -monitor stdio -kernel myos.bin -no-shutdown -no-reboot
 
 clean:
 	rm -rf isodir

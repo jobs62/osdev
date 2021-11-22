@@ -13,10 +13,12 @@ void dump_bitmap();
 unsigned int get_physaddr(unsigned int virtualaddr);
 
 extern void PAGE_DIRECTORY(void);
+extern void PAGE_TABLE(void);
 unsigned int * kpage_directory = (unsigned int *)&PAGE_DIRECTORY;
 
 extern void setup_gdt(void);
 extern void setup_idt(void);
+void vmm_init(void);
 
 char *vidptr = (char*)0xc00b8000;
 unsigned int xpos = 0;
@@ -27,6 +29,11 @@ void itoa(char *buf, unsigned int c, unsigned int base);
 int put(char c);
 void *memcpy(void *dst, void *src, unsigned long size);
 void *memset(void* dst, int c, unsigned long size);
+
+void set_kbrk(void *addr);
+void alloc_kbrk(void *min, void *max);
+void free_kbrk(void *min, void *max);
+void *get_kbrk();
 
 #define CHECK_FLAG(flags,bit)   ((flags) & (1 << (bit)))
 
@@ -82,15 +89,25 @@ void kmain(unsigned long magic, unsigned long addr) {
         //that should map the first 2Mb as used
         bitmap_mark_as_used(i);
     }
-    
-    //that should unmap the first megabyte ??!
-    kpage_directory[0] = 0;
 
     asm volatile("sti");
    
+    //that should unmap the first megabyte ??!
+    kpage_directory[0] = 0;
+    
+    vmm_init();
+
     dump_bitmap();
     kprintf("still alive\n");
     kprintf("physaddr from 0x%8h: 0x%8h\n", vidptr, get_physaddr(vidptr));
+    kprintf("get_kbrk: 0x%8h\n", get_kbrk());
+    set_kbrk(0xfffe0000);
+    kprintf("get_kbrk: 0x%8h\n", get_kbrk());
+    set_kbrk(0xfffd0000);
+    kprintf("get_kbrk: 0x%8h\n", get_kbrk());
+    set_kbrk(0xfffe0000);
+    kprintf("get_kbrk: 0x%8h\n", get_kbrk());
+    dump_bitmap();
 
     return;
 }
@@ -288,7 +305,7 @@ unsigned int get_physaddr(unsigned int virtualaddr) {
     }
    
     //So i guess i have to map every pt to a specific virtual location to be able to find them
-    unsigned int *pt = (unsigned int *)((pdentry & ~0xFFF) + 0xC0000000);
+    unsigned int *pt = (unsigned int *)(0xB0000000 | (pdindex << 12));
     unsigned int ptentry = pt[ptindex];
     if ((ptentry & 0x00000001) == 0) {
         kprintf("pte not present\n");
@@ -300,21 +317,159 @@ unsigned int get_physaddr(unsigned int virtualaddr) {
 }
 
 void map_page(unsigned int physadd, unsigned int virtaddr, unsigned int flags) {
+    //kprintf("map_page: physadd: 0x%8h; virtaddr: 0x%8h; flags: 0x%8h\n", physadd, virtaddr, flags);
+
     unsigned int pdindex = (unsigned int)virtaddr >> 22;
     unsigned int ptindex = (unsigned int)virtaddr >> 12 & 0x03FF;
-    
     unsigned int pdentry = (unsigned int)kpage_directory[pdindex];
-    if ((pdentry & 0x00000001) == 0) {
-        kprintf("pt not present\n");
-        //TODO: alloc page, map page and init pd entry
+    unsigned int *pt = (unsigned int *)(0xB0000000 | (pdindex << 12));
 
+    if ((pdentry & 0x00000001) == 0) {
+        kprintf("pt not present (0x%8h)\n", pt);
+        
+        //alloc page
+        unsigned int pagetable_physmap = bitmap_find_free_page() * 4096;
+        if (pagetable_physmap == 0) {
+            kprintf("ERROR: could not get page\n");
+            return;
+        }
+
+        bitmap_mark_as_used(pagetable_physmap / 4096);
+
+        //map page
+        map_page(pagetable_physmap, (unsigned int)pt, 0x02);
+        kpage_directory[pdindex] = (pagetable_physmap & ~0xFFF) | 0x03;
+        
+        //init page
+        memset(pt, 0, 1024);
     }
 
-    unsigned int *pt = (unsigned int *)((pdentry & ~0xFFF) + 0xC0000000);
     if ((pt[ptindex] & 0x00000001) != 0) {
         kprintf("ERROR: pte is present; map not free to use !\n");
         return;
     }
 
     pt[ptindex] = (physadd & ~0xFFF) | (flags & 0xFFF) | 0x01;
+}
+
+void unmap_page(unsigned int virtaddr) {
+    unsigned int pdindex = (unsigned int)virtaddr >> 22;
+    unsigned int ptindex = (unsigned int)virtaddr >> 12 & 0x03FF;
+    unsigned int pdentry = (unsigned int)kpage_directory[pdindex];
+    unsigned int *pt = (unsigned int *)(0xB0000000 | (pdindex << 12));
+
+    kprintf("map_page: virtaddr: 0x%8h; pdindex: 0x%8h; ptindex: 0x%8h; pt: 0x%8h\n", virtaddr, pdindex, ptindex, pt);
+
+    //asm volatile("hlt");
+
+    pt[ptindex] = 0;
+
+    int i;
+    for (i = 0; i < 1024; i++) {
+        if (pt[i] != 0) {
+            break;
+        }
+    }
+
+    if (i == 1024) {
+        kpage_directory[pdindex] = 0;
+        unmap_page((unsigned int)pt);
+        bitmap_mark_as_free(virtaddr / 4096);
+        
+    }
+}
+
+void vmm_init() {
+    unsigned int *vmm_base = 0xB0000000;
+    unsigned int tmp;
+
+    unsigned int pagetable_physmap = bitmap_find_free_page() * 4096;
+    if (pagetable_physmap == 0) {
+        kprintf("ERROR: could not get page\n");
+        return;
+    }
+
+    bitmap_mark_as_used(pagetable_physmap / 4096);
+    kpage_directory[704] = (pagetable_physmap & ~0xFFF) | 0x03; //present and read-write
+    
+    //use the last page of the bootloaded page table to bootstrap the maps' map
+    tmp = ((unsigned int *)&PAGE_TABLE)[1023];
+    ((unsigned int *)&PAGE_TABLE)[1023] = (pagetable_physmap & ~0xFFF) | 0x03;
+    vmm_base = (unsigned int *)0xC03ff000;
+    memset(vmm_base, 0, 1024);
+    vmm_base[704] = (pagetable_physmap & ~0xFFF) | 0x03; //present and read-write
+    vmm_base = (unsigned int *)0xB0000000;
+    //((unsigned int *)&PAGE_TABLE)[1023] = 0; /* if uncommentaed, it crash everithing ?? need to be investigated */
+
+    vmm_base[704 * 1024 + 768] = ((unsigned int)(&PAGE_TABLE) & ~0xFFF) | 0x03; //present and read-write
+}
+
+void *get_kbrk() {
+    int pdindex, ptindex;
+
+    for (pdindex = 1023; pdindex > 0; pdindex--) {
+        ptindex = 1023;
+        if ((kpage_directory[pdindex] & 0x00000001) == 0) {
+            goto get_brk_endloop;
+        }
+        
+        unsigned int *pt = (unsigned int *)(0xB0000000 | (pdindex << 12));
+        for (; ptindex > 0; ptindex--) {
+            if ((pt[ptindex] & 0x00000001) == 0) {
+                goto get_brk_endloop;
+            }
+        }
+    }
+get_brk_endloop:
+
+    return (void *)((pdindex << 22) | (ptindex << 12) | 0xFFF); //0xFFF to get the end of the page
+}
+
+void alloc_kbrk(void *min, void *max) {
+    if (max == 0xffffffff) {
+        //carful with overflow at first alloc
+        unsigned int pagetable_physmap = bitmap_find_free_page() * 4096;
+        if (pagetable_physmap == 0) {
+            kprintf("ERROR: could not get page\n");
+            return;
+        }
+
+        bitmap_mark_as_used(pagetable_physmap / 4096);
+
+        map_page(pagetable_physmap, 0xfffff000, 0x02);
+
+        max -= 4096;
+    }
+
+    for (; min < max; min += 4096) {
+        unsigned int pagetable_physmap = bitmap_find_free_page() * 4096;
+        if (pagetable_physmap == 0) {
+            kprintf("ERROR: could not get page\n");
+            return;
+        }
+
+        bitmap_mark_as_used(pagetable_physmap / 4096);
+
+        map_page(pagetable_physmap, (unsigned int)min, 0x02);
+    }
+}
+
+void free_kbrk(void *min, void *max) {
+    for (; min < max; min += 4096) {
+        unsigned int pagetable_physmap = get_physaddr((unsigned int)min);
+        unmap_page((unsigned int)min);
+        bitmap_mark_as_free(pagetable_physmap / 4096);
+    }
+}
+
+void set_kbrk(void *addr) {
+    void *min, *max;
+
+    min = addr;
+    max = get_kbrk();
+    if (min > max) {
+        free_kbrk(max, min);
+    } else {
+        alloc_kbrk(min, max);
+    }
 }
