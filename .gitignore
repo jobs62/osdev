@@ -1,0 +1,4 @@
+*.o
+*.oa
+myos.bin
+compile_commands.json
