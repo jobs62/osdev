@@ -47,3 +47,8 @@ void write_tss(unsigned short ss0, unsigned short esp0) {
     tss.fs = 0x13;
     tss.gs = 0x13;
 }
+
+
+void update_kernel_stack(void *stack) {
+	tss.esp0 = (unsigned int)stack;
+}

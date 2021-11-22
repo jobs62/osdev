@@ -473,7 +473,7 @@ void set_kbrk(void *addr) {
     }
 }
 
-
+extern void update_kernel_stack(void *stack);
 
 void prepare_switch_to_usermode() {
     unsigned int user_mode_upper_limit = get_kbrk();
@@ -481,19 +481,28 @@ void prepare_switch_to_usermode() {
     unsigned int *user_kernel_table_directory = (unsigned int *)GET_BEGINGIN_PREV_PAGE(user_page_directory);
     unsigned int *user_stack_table_directory = (unsigned int *)GET_BEGINGIN_PREV_PAGE(user_kernel_table_directory);
     unsigned int *user_stack_limit =  (unsigned int *)GET_BEGINGIN_PREV_PAGE(user_stack_table_directory);
-    set_kbrk(user_stack_limit);
+    unsigned int *kernel_stack_limit =  (unsigned int *)GET_BEGINGIN_PREV_PAGE(user_stack_limit);
+    set_kbrk(kernel_stack_limit);
 
     kprintf("user_mode_upper_limit: 0x%8h; user_page_directory: 0x%8h; user_stack_table_directory: 0x%8h; user_stack_limit: 0x%8h\n",
         user_mode_upper_limit, user_page_directory, user_stack_table_directory, user_stack_limit);
 
     memset(user_page_directory, 0, 4096);
-    user_page_directory[768] = (get_physaddr(user_kernel_table_directory) & ~0xFFF) | 0x05; //kernel maping, read-only, user accesible, present
+    user_page_directory[768] = (get_physaddr(user_kernel_table_directory) & ~0xFFF) | 0x07; //kernel maping, read-right, user accesible, present
     user_page_directory[767] = (get_physaddr(user_stack_table_directory) & ~0xFFF) | 0x07; //user stack, read-write, user access, present
 
     memset(user_kernel_table_directory, 0, 4096);
+    /*
+     * having to map kernel code is terrible but as for now it's a good PoC
+     * i guess in the feature i should load a elf and point directly at start entry
+     */
     for (int i = 0; i < 512; i++) {
-        user_kernel_table_directory[i] = (i << 12) | 0x05;
+        user_kernel_table_directory[i] = (i << 12) | 0x05; //kernel maping, read-only, user accesible, present
     }
+    user_kernel_table_directory[1023] = (get_physaddr(kernel_stack_limit) & ~0xFFF) | 0x03; //kernel stack, read-write, present
+    update_kernel_stack(0xc004ffff); /* OK, so i need a valid stack for handling interupt, which is fine, but i still need to go back to
+                                      * kernel memory mapping to do some stuff.
+                                      */
 
     memset(user_stack_table_directory, 0, 4096);
     user_stack_table_directory[1023] = (get_physaddr((unsigned int)user_stack_limit) & ~0xFFF) | 0x07; //user stack, read-write, user access, present
