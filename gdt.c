@@ -1,5 +1,7 @@
 
 extern void load_gdt(void);
+extern void tss_flush(void);
+extern void write_tss(unsigned short ss0, unsigned short esp0);
 
 struct gdt_entry {
     unsigned short limit_low;           // The lower 16 bits of the limit.
@@ -15,9 +17,12 @@ struct gdt_ptr {
     unsigned int base;                // The address of the first gdt_entry_t struct.
 } __attribute__((packed));
 
-#define GDT_ENTRIES_SZ 3
+#define GDT_ENTRIES_SZ 6
 #define GDT_CS_KERN 1
 #define GDT_DS_KERN 2
+#define GDT_CS_USER 3
+#define GDT_DS_USER 4
+#define GDT_TSS 5
 
 struct gdt_entry gdt_entries[GDT_ENTRIES_SZ];
 struct gdt_ptr gdt_base;
@@ -36,9 +41,13 @@ void setup_gdt() {
     gdt_set_gate(0, 0, 0, 0, 0);                // Null segment 0x00
     gdt_set_gate(GDT_CS_KERN, 0, 0xFFFFFFFF, 0x9A, 0xCF); // Code segment 0x08
     gdt_set_gate(GDT_DS_KERN, 0, 0xFFFFFFFF, 0x92, 0xCF); // Data segment 0x10
+    gdt_set_gate(GDT_CS_USER, 0, 0xFFFFFFFF, 0xFA, 0xCF); // Code segment 0x18
+    gdt_set_gate(GDT_DS_USER, 0, 0xFFFFFFFF, 0xF2, 0xCF); // Data segment 0x20
+    write_tss(0x10, 0xbfffffff); //TODO: i guess i need a real stack lol
 
     gdt_base.base = (unsigned int)&gdt_entries;
     gdt_base.limit = sizeof(struct gdt_entry) * GDT_ENTRIES_SZ - 1;
 
-    load_gdt();    
+    load_gdt();
+    tss_flush(); 
 }

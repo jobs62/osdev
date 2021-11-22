@@ -35,6 +35,9 @@ void alloc_kbrk(void *min, void *max);
 void free_kbrk(void *min, void *max);
 void *get_kbrk();
 
+void prepare_switch_to_usermode(void);
+extern void switch_to_user_mode(void);
+
 #define CHECK_FLAG(flags,bit)   ((flags) & (1 << (bit)))
 
 void kmain(unsigned long magic, unsigned long addr) {
@@ -97,17 +100,7 @@ void kmain(unsigned long magic, unsigned long addr) {
     
     vmm_init();
 
-    dump_bitmap();
-    kprintf("still alive\n");
-    kprintf("physaddr from 0x%8h: 0x%8h\n", vidptr, get_physaddr(vidptr));
-    kprintf("get_kbrk: 0x%8h\n", get_kbrk());
-    set_kbrk(0xfffe0000);
-    kprintf("get_kbrk: 0x%8h\n", get_kbrk());
-    set_kbrk(0xfffd0000);
-    kprintf("get_kbrk: 0x%8h\n", get_kbrk());
-    set_kbrk(0xfffe0000);
-    kprintf("get_kbrk: 0x%8h\n", get_kbrk());
-    dump_bitmap();
+    prepare_switch_to_usermode();
 
     return;
 }
@@ -422,7 +415,11 @@ void *get_kbrk() {
     }
 get_brk_endloop:
 
-    return (void *)((pdindex << 22) | (ptindex << 12) | 0xFFF); //0xFFF to get the end of the page
+    if (pdindex == 1023 && ptindex == 1023) {
+        return (void *)0xffffffff;
+    }
+
+    return (void *)((pdindex << 22) | (ptindex << 12) | 0x000); //0xFFF to get the end of the page
 }
 
 void alloc_kbrk(void *min, void *max) {
@@ -438,7 +435,7 @@ void alloc_kbrk(void *min, void *max) {
 
         map_page(pagetable_physmap, 0xfffff000, 0x02);
 
-        max -= 4096;
+        max = 0xfffff000;
     }
 
     for (; min < max; min += 4096) {
@@ -454,8 +451,10 @@ void alloc_kbrk(void *min, void *max) {
     }
 }
 
+#define GET_BEGINGIN_PREV_PAGE(page) ((((unsigned int)page >> 12) - 1) << 12)
+
 void free_kbrk(void *min, void *max) {
-    for (; min < max; min += 4096) {
+    for (; min < max; min = (void *)GET_BEGINGIN_PREV_PAGE(min)) {
         unsigned int pagetable_physmap = get_physaddr((unsigned int)min);
         unmap_page((unsigned int)min);
         bitmap_mark_as_free(pagetable_physmap / 4096);
@@ -472,4 +471,34 @@ void set_kbrk(void *addr) {
     } else {
         alloc_kbrk(min, max);
     }
+}
+
+
+
+void prepare_switch_to_usermode() {
+    unsigned int user_mode_upper_limit = get_kbrk();
+    unsigned int *user_page_directory = (unsigned int *)GET_BEGINGIN_PREV_PAGE(user_mode_upper_limit);
+    unsigned int *user_kernel_table_directory = (unsigned int *)GET_BEGINGIN_PREV_PAGE(user_page_directory);
+    unsigned int *user_stack_table_directory = (unsigned int *)GET_BEGINGIN_PREV_PAGE(user_kernel_table_directory);
+    unsigned int *user_stack_limit =  (unsigned int *)GET_BEGINGIN_PREV_PAGE(user_stack_table_directory);
+    set_kbrk(user_stack_limit);
+
+    kprintf("user_mode_upper_limit: 0x%8h; user_page_directory: 0x%8h; user_stack_table_directory: 0x%8h; user_stack_limit: 0x%8h\n",
+        user_mode_upper_limit, user_page_directory, user_stack_table_directory, user_stack_limit);
+
+    memset(user_page_directory, 0, 4096);
+    user_page_directory[768] = (get_physaddr(user_kernel_table_directory) & ~0xFFF) | 0x05; //kernel maping, read-only, user accesible, present
+    user_page_directory[767] = (get_physaddr(user_stack_table_directory) & ~0xFFF) | 0x07; //user stack, read-write, user access, present
+
+    memset(user_kernel_table_directory, 0, 4096);
+    for (int i = 0; i < 512; i++) {
+        user_kernel_table_directory[i] = (i << 12) | 0x05;
+    }
+
+    memset(user_stack_table_directory, 0, 4096);
+    user_stack_table_directory[1023] = (get_physaddr((unsigned int)user_stack_limit) & ~0xFFF) | 0x07; //user stack, read-write, user access, present
+
+    asm volatile("mov %0, %%cr3" : : "r"(get_physaddr((unsigned int)user_page_directory)));
+
+    switch_to_user_mode();
 }

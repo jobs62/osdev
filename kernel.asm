@@ -36,8 +36,8 @@ higher_half:
     call kmain
 
 loop:
-    pause		 	;halt the CPU
-    jmp loop
+    hlt		 	;halt the CPU
+    jmp loop	;this should be non reachable code anyway
 
 global load_gdt
 extern gdt_base
@@ -61,6 +61,38 @@ load_gdt:
 	mov ss, ax
 	ret
 
+
+global tss_flush
+tss_flush:
+	mov ax, 0x2b
+	ltr ax
+	ret
+
+
+global switch_to_user_mode
+switch_to_user_mode:
+	cli ;critical code section
+	
+	mov ax, 0x23 ; Load user data segmement selectors.
+	mov ds, ax
+	mov es, ax
+	mov fs, ax
+	mov gs, ax
+	;mov ss, ax
+
+	;mov eax, esp
+	push 0x23
+	push 0xbfffffff
+	pushf
+	pop eax
+	or eax, 0x200
+	push eax
+	push 0x1b
+	push .1
+	iret
+.1:
+	nop
+	jmp .1
 
 section .bss
     align 16
