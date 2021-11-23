@@ -408,15 +408,15 @@ void vmm_init() {
     }
 
     bitmap_mark_as_used(pagetable_physmap);
-    kpage_directory[704] = (pagetable_physmap & ~FIRST_12BITS_MASK) | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT;
+    kpage_directory[VM_VITRADDR_TO_PDINDEX(VM_PT_MOUNT_BASE)] = (pagetable_physmap & ~FIRST_12BITS_MASK) | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT;
     
     //use the last page of the bootloaded page table to bootstrap the maps' map
     //tmp = ((unsigned int *)&PAGE_TABLE)[1023];
     ((unsigned int *)&PAGE_TABLE)[1023] = (pagetable_physmap & ~FIRST_12BITS_MASK) | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT;
     vmm_base = (unsigned int *)0xC03ff000;
     memset(vmm_base, 0, 1024);
-    vmm_base[704] = (pagetable_physmap & ~FIRST_12BITS_MASK) | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT;
-    vmm_base = (unsigned int *)VM_PT_MOUNT_BASE;
+    vmm_base[VM_VITRADDR_TO_PDINDEX(VM_PT_MOUNT_BASE)] = (pagetable_physmap & ~FIRST_12BITS_MASK) | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT;
+    vmm_base = VM_PT_MOUNT_BASE;
     //((unsigned int *)&PAGE_TABLE)[1023] = 0; /* if uncommentaed, it crash everithing ?? need to be investigated */
 
     vmm_base[704 * 1024 + 768] = ((unsigned int)(&PAGE_TABLE) & ~FIRST_12BITS_MASK) | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT;
