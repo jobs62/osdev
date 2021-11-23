@@ -502,6 +502,9 @@ void set_kbrk(void *addr) {
 
 extern void update_kernel_stack(void *stack);
 
+#define USER_KERN_STACK (virtaddr_t)0xc004ffff
+#define USER_STACk (virtaddr_t)0xbfffffff
+
 void prepare_switch_to_usermode() {
     unsigned int *user_mode_upper_limit = get_kbrk();
     unsigned int *user_page_directory = GET_BEGINGIN_PREV_PAGE(user_mode_upper_limit);
@@ -515,8 +518,8 @@ void prepare_switch_to_usermode() {
         user_mode_upper_limit, user_page_directory, user_stack_table_directory, user_stack_limit);
 
     memset(user_page_directory, 0, PAGE_SIZE);
-    user_page_directory[768] = (get_physaddr(user_kernel_table_directory) & ~FIRST_12BITS_MASK) | VM_PAGE_USER_ACCESS | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT; //kernel mapping
-    user_page_directory[767] = (get_physaddr(user_stack_table_directory) & ~FIRST_12BITS_MASK) | VM_PAGE_USER_ACCESS | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT; //user stack
+    user_page_directory[VM_VITRADDR_TO_PDINDEX(KERNAL_MAP_BASE)] = (get_physaddr(user_kernel_table_directory) & ~FIRST_12BITS_MASK) | VM_PAGE_USER_ACCESS | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT; //kernel mapping
+    user_page_directory[VM_VITRADDR_TO_PDINDEX(KERNAL_MAP_BASE) - 1] = (get_physaddr(user_stack_table_directory) & ~FIRST_12BITS_MASK) | VM_PAGE_USER_ACCESS | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT; //user stack
 
     memset(user_kernel_table_directory, 0, PAGE_SIZE);
     /*
@@ -526,13 +529,13 @@ void prepare_switch_to_usermode() {
     for (int i = 0; i < 512; i++) {
         user_kernel_table_directory[i] = (i << VM_PTINDEX_SHIFT) | VM_PAGE_USER_ACCESS | VM_PAGE_PRESENT; //kernel maping
     }
-    user_kernel_table_directory[1023] = (get_physaddr(kernel_stack_limit) & ~FIRST_12BITS_MASK) | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT; //kernel stack
-    update_kernel_stack((virtaddr_t)0xc004ffff); /* OK, so i need a valid stack for handling interupt, which is fine, but i still need to go back to
+    user_kernel_table_directory[VM_VITRADDR_TO_PTINDEX(USER_KERN_STACK)] = (get_physaddr(kernel_stack_limit) & ~FIRST_12BITS_MASK) | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT; //kernel stack
+    update_kernel_stack(USER_KERN_STACK); /* OK, so i need a valid stack for handling interupt, which is fine, but i still need to go back to
                                       * kernel memory mapping to do some stuff.
                                       */
 
     memset(user_stack_table_directory, 0, PAGE_SIZE);
-    user_stack_table_directory[1023] = (get_physaddr(user_stack_limit) & ~FIRST_12BITS_MASK) | VM_PAGE_USER_ACCESS | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT; //user stack, read-write, user access, present
+    user_stack_table_directory[VM_VITRADDR_TO_PTINDEX(USER_STACk)] = (get_physaddr(user_stack_limit) & ~FIRST_12BITS_MASK) | VM_PAGE_USER_ACCESS | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT; //user stack, read-write, user access, present
 
     asm volatile("mov %0, %%cr3" : : "r"(get_physaddr(user_page_directory)));
 
