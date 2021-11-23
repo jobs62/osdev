@@ -104,6 +104,7 @@ void interrupt_handler(struct cpu_state cpu, unsigned int interrupt, struct stac
     if (interrupt == 0x21) {
         kprintf("scancode: 0x%8h\n", inb(0x60));
     }
+
     PIC_sendEOI(interrupt);
 }
 
@@ -204,7 +205,8 @@ void PIC_sendEOI(unsigned char irq) {
 #define ICW4_SFNM  0x10
 
 void PIC_remap(int offset1, int offset2) {
-    unsigned char a1, a2;
+    unsigned char a1;
+    unsigned char a2;
 
     a1 = inb(PIC1_DATA); //save masks
     a2 = inb(PIC2_DATA);
