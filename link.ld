@@ -7,6 +7,8 @@ ENTRY(start)
 SECTIONS{
 	. = 0xC0100000;
 	
+	__kernel_ro_start = .;
+
 	.text : AT(ADDR(.text) - 0xC0000000) {
 		*(.multiboot)
         *(.text)
@@ -15,6 +17,8 @@ SECTIONS{
 	.rodata ALIGN (4096) : AT(ADDR(.rodata) - 0xC0000000) {
 		*(.rodata)
 	}
+
+	__kernel_ro_rw = .;
 	
 	.data ALIGN (4096) : AT(ADDR(.data) - 0xC0000000) {
 		*(.data)
@@ -24,4 +28,6 @@ SECTIONS{
 		*(COMMON)
 		*(.bss)
 	}
+
+	__kernel_rw_end = .;
 }
