@@ -7,13 +7,20 @@
 
 #define FIRST_12BITS_MASK 0xFFF
 
+typedef unsigned char uint8_t;
+typedef unsigned short uint16_t;
+typedef unsigned int uint32_t;
+typedef unsigned long long uint64_t;
+typedef void* virtaddr_t;
+typedef uint32_t physaddr_t;
+
 unsigned char bitmap[PAGE_SIZE];
-void bitmap_mark_as_used(unsigned int page);
-void bitmap_mark_as_free(unsigned int page);
-int bitmap_page_status(unsigned int page);
-unsigned int bitmap_find_free_page();
+void bitmap_mark_as_used(physaddr_t page);
+void bitmap_mark_as_free(physaddr_t page);
+int bitmap_page_status(physaddr_t page);
+physaddr_t bitmap_find_free_page();
 void dump_bitmap();
-unsigned int get_physaddr(unsigned int virtualaddr);
+physaddr_t get_physaddr(virtaddr_t virtaddr);
 
 extern void PAGE_DIRECTORY(void);
 extern void PAGE_TABLE(void);
@@ -23,7 +30,10 @@ extern void setup_gdt(void);
 extern void setup_idt(void);
 void vmm_init(void);
 
-char *vidptr = (char*)0xc00b8000;
+#define BIOS_VIDEO_PTR 0x000b8000
+#define KERNAL_MAP_BASE 0xc0000000
+
+char *vidptr = (char*)(BIOS_VIDEO_PTR | KERNAL_MAP_BASE);
 unsigned int xpos = 0;
 unsigned int ypos = 0;
 
@@ -85,7 +95,7 @@ void kmain(unsigned long magic, unsigned long addr) {
 
                 if (mmap->type == MULTIBOOT_MEMORY_AVAILABLE) {
                     for (unsigned int page = mmap->addr; page < mmap->addr + mmap->len; page += PAGE_SIZE) {
-                        bitmap_mark_as_free(page / PAGE_SIZE);
+                        bitmap_mark_as_free(page);
                     }
                 }
         }
@@ -190,6 +200,7 @@ void itoa(char *buf, unsigned int c, unsigned int base) {
     }
 }
 
+#define WHITE_ON_BLACK 0x07
 
 int put(char c) {
     if (c == '\n') {
@@ -211,14 +222,14 @@ int put(char c) {
         unsigned int j = (ROW - 1) * COL * 2;
         while (j < COL * ROW * 2) {
             vidptr[j++] = ' ';
-            vidptr[j++] = 0x07;
+            vidptr[j++] = WHITE_ON_BLACK;
         }
         --ypos;
     }
 
     unsigned int i = (ypos * COL + xpos) * 2;
     vidptr[i++] = c;
-    vidptr[i] = 0x07;
+    vidptr[i] = WHITE_ON_BLACK;
     ++xpos;
 
     return (0);
@@ -249,35 +260,35 @@ void *memset(void* dst, int c, unsigned long size) {
 
 #define BITS_IN_BYTE 8
 
-void bitmap_mark_as_used(unsigned int page) {
-    unsigned int a = page / BITS_IN_BYTE;
+void bitmap_mark_as_used(physaddr_t page) {
+    unsigned int a = page / BITS_IN_BYTE / PAGE_SIZE;
     int mask = ~(1 << (page % BITS_IN_BYTE));
 
     bitmap[a] &= mask; 
 }
 
-void bitmap_mark_as_free(unsigned int page) {
-    unsigned int a = page / BITS_IN_BYTE;
+void bitmap_mark_as_free(physaddr_t page) {
+    unsigned int a = page / BITS_IN_BYTE / PAGE_SIZE;
     int mask = 1 << (page % BITS_IN_BYTE);
 
     bitmap[a] |= mask; 
 }
 
-int bitmap_page_status(unsigned int page) {
-    unsigned int a = page / BITS_IN_BYTE;
+int bitmap_page_status(physaddr_t page) {
+    unsigned int a = page / BITS_IN_BYTE / PAGE_SIZE;
     int mask = 1 << (page % BITS_IN_BYTE);
 
     return (bitmap[a] & mask) == 0; 
 }
 
-unsigned int bitmap_find_free_page() {
+physaddr_t bitmap_find_free_page() {
     int a;
     int b;
     
     for (a = 0; a < PAGE_SIZE; a++) {
         for (b = 0; b < BITS_IN_BYTE; b++) {
             if ((bitmap[a] & (1 << b)) != 0) {
-                return a * BITS_IN_BYTE + b;    
+                return (a * BITS_IN_BYTE + b) * PAGE_SIZE;    
             }
         } 
     }
@@ -295,17 +306,19 @@ void dump_bitmap() {
     }
 }
 
-#define VM_PT_MOUNT_BASE 0xB0000000
-#define VM_PDINDEX_TO_PTR(index) (VM_PT_MOUNT_BASE | ((index) << 12))
-#define VM_VITRADDR_TO_PDINDEX(virtaddr) ((virtaddr) >> 22)
-#define VM_VITRADDR_TO_PTINDEX(virtaddr) ((virtaddr) >> 12 & 0x03FF)
+#define VM_PT_MOUNT_BASE (virtaddr_t)0xB0000000
+#define VM_PDINDEX_SHIFT 22
+#define VM_PTINDEX_SHIFT 12
+#define VM_PDINDEX_TO_PTR(index) ((unsigned int *)((uint32_t)VM_PT_MOUNT_BASE | ((index) << VM_PTINDEX_SHIFT)))
+#define VM_VITRADDR_TO_PDINDEX(virtaddr) ((uint32_t)(virtaddr) >> VM_PDINDEX_SHIFT)
+#define VM_VITRADDR_TO_PTINDEX(virtaddr) ((uint32_t)(virtaddr) >> VM_PTINDEX_SHIFT & 0x03FF)
 #define VM_PAGE_PRESENT 0x1
 #define VM_PAGE_READ_WRITE 0x2
 #define VM_PAGE_USER_ACCESS 0x4
 
-unsigned int get_physaddr(unsigned int virtualaddr) {
-    unsigned int pdindex = (unsigned int)VM_VITRADDR_TO_PDINDEX(virtualaddr);
-    unsigned int ptindex = (unsigned int)VM_VITRADDR_TO_PTINDEX(virtualaddr);
+physaddr_t get_physaddr(virtaddr_t virtaddr) {
+    unsigned int pdindex = VM_VITRADDR_TO_PDINDEX(virtaddr);
+    unsigned int ptindex = VM_VITRADDR_TO_PTINDEX(virtaddr);
     kprintf("pdindex: 0x%8h; ptindex: 0x%8h\n", pdindex, ptindex);
 
     unsigned int pdentry = (unsigned int)kpage_directory[pdindex];
@@ -323,31 +336,31 @@ unsigned int get_physaddr(unsigned int virtualaddr) {
     }
     kprintf("pt: 0x%8h\n", pt);
 
-    return (ptentry & ~FIRST_12BITS_MASK) + ((unsigned int)virtualaddr & FIRST_12BITS_MASK);
+    return (ptentry & ~FIRST_12BITS_MASK) + ((unsigned int)virtaddr & FIRST_12BITS_MASK);
 }
 
-void map_page(unsigned int physadd, unsigned int virtaddr, unsigned int flags) {
+void map_page(physaddr_t physadd, virtaddr_t virtaddr, unsigned int flags) {
     //kprintf("map_page: physadd: 0x%8h; virtaddr: 0x%8h; flags: 0x%8h\n", physadd, virtaddr, flags);
 
-    unsigned int pdindex = (unsigned int)VM_VITRADDR_TO_PDINDEX(virtaddr);
-    unsigned int ptindex = (unsigned int)VM_VITRADDR_TO_PTINDEX(virtaddr);
+    unsigned int pdindex = VM_VITRADDR_TO_PDINDEX(virtaddr);
+    unsigned int ptindex = VM_VITRADDR_TO_PTINDEX(virtaddr);
     unsigned int pdentry = (unsigned int)kpage_directory[pdindex];
-    unsigned int *pt = (unsigned int *)VM_PDINDEX_TO_PTR(pdindex);
+    unsigned int *pt = VM_PDINDEX_TO_PTR(pdindex);
 
     if ((pdentry & 0x00000001) == 0) {
         kprintf("pt not present (0x%8h)\n", pt);
         
         //alloc page
-        unsigned int pagetable_physmap = bitmap_find_free_page() * PAGE_SIZE;
+        physaddr_t pagetable_physmap = bitmap_find_free_page();
         if (pagetable_physmap == 0) {
             kprintf("ERROR: could not get page\n");
             return;
         }
 
-        bitmap_mark_as_used(pagetable_physmap / PAGE_SIZE);
+        bitmap_mark_as_used(pagetable_physmap);
 
         //map page
-        map_page(pagetable_physmap, (unsigned int)pt, VM_PAGE_READ_WRITE);
+        map_page(pagetable_physmap, pt, VM_PAGE_READ_WRITE);
         kpage_directory[pdindex] = (pagetable_physmap & ~FIRST_12BITS_MASK) | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT;
         
         //init page
@@ -362,14 +375,12 @@ void map_page(unsigned int physadd, unsigned int virtaddr, unsigned int flags) {
     pt[ptindex] = (physadd & ~FIRST_12BITS_MASK) | (flags & FIRST_12BITS_MASK) | VM_PAGE_PRESENT;
 }
 
-void unmap_page(unsigned int virtaddr) {
-    unsigned int pdindex = (unsigned int)VM_VITRADDR_TO_PDINDEX(virtaddr);
-    unsigned int ptindex = (unsigned int)VM_VITRADDR_TO_PTINDEX(virtaddr);
-    unsigned int *pt = (unsigned int *)VM_PDINDEX_TO_PTR(pdindex);
+void unmap_page(virtaddr_t virtaddr) {
+    unsigned int pdindex = VM_VITRADDR_TO_PDINDEX(virtaddr);
+    unsigned int ptindex = VM_VITRADDR_TO_PTINDEX(virtaddr);
+    unsigned int *pt = VM_PDINDEX_TO_PTR(pdindex);
 
     kprintf("map_page: virtaddr: 0x%8h; pdindex: 0x%8h; ptindex: 0x%8h; pt: 0x%8h\n", virtaddr, pdindex, ptindex, pt);
-
-    //asm volatile("hlt");
 
     pt[ptindex] = 0;
 
@@ -382,27 +393,25 @@ void unmap_page(unsigned int virtaddr) {
 
     if (i == 1024) {
         kpage_directory[pdindex] = 0;
-        unmap_page((unsigned int)pt);
-        bitmap_mark_as_free(virtaddr / PAGE_SIZE);
-        
+        unmap_page(pt);
+        //bitmap_mark_as_free(virtaddr); that is a bug rigth ?
     }
 }
 
 void vmm_init() {
     unsigned int *vmm_base = VM_PT_MOUNT_BASE;
-    unsigned int tmp;
 
-    unsigned int pagetable_physmap = bitmap_find_free_page() * PAGE_SIZE;
+    unsigned int pagetable_physmap = bitmap_find_free_page();
     if (pagetable_physmap == 0) {
         kprintf("ERROR: could not get page\n");
         return;
     }
 
-    bitmap_mark_as_used(pagetable_physmap / PAGE_SIZE);
+    bitmap_mark_as_used(pagetable_physmap);
     kpage_directory[704] = (pagetable_physmap & ~FIRST_12BITS_MASK) | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT;
     
     //use the last page of the bootloaded page table to bootstrap the maps' map
-    tmp = ((unsigned int *)&PAGE_TABLE)[1023];
+    //tmp = ((unsigned int *)&PAGE_TABLE)[1023];
     ((unsigned int *)&PAGE_TABLE)[1023] = (pagetable_physmap & ~FIRST_12BITS_MASK) | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT;
     vmm_base = (unsigned int *)0xC03ff000;
     memset(vmm_base, 0, 1024);
@@ -436,19 +445,19 @@ get_brk_endloop:
         return (void *)~0;
     }
 
-    return (void *)((pdindex << 22) | (ptindex << 12)); //0xFFF to get the end of the page
+    return (void *)((pdindex << VM_PDINDEX_SHIFT) | (ptindex << VM_PTINDEX_SHIFT));
 }
 
 void alloc_kbrk(void *min, void *max) {
     if (max == ~0) {
         //carful with overflow at first alloc
-        unsigned int pagetable_physmap = bitmap_find_free_page() * PAGE_SIZE;
+        unsigned int pagetable_physmap = bitmap_find_free_page();
         if (pagetable_physmap == 0) {
             kprintf("ERROR: could not get page\n");
             return;
         }
 
-        bitmap_mark_as_used(pagetable_physmap / PAGE_SIZE);
+        bitmap_mark_as_used(pagetable_physmap);
 
         map_page(pagetable_physmap, ~0 & ~FIRST_12BITS_MASK, VM_PAGE_READ_WRITE);
 
@@ -456,25 +465,25 @@ void alloc_kbrk(void *min, void *max) {
     }
 
     for (; min < max; min += PAGE_SIZE) {
-        unsigned int pagetable_physmap = bitmap_find_free_page() * PAGE_SIZE;
+        unsigned int pagetable_physmap = bitmap_find_free_page();
         if (pagetable_physmap == 0) {
             kprintf("ERROR: could not get page\n");
             return;
         }
 
-        bitmap_mark_as_used(pagetable_physmap / PAGE_SIZE);
+        bitmap_mark_as_used(pagetable_physmap);
 
-        map_page(pagetable_physmap, (unsigned int)min, 0x02);
+        map_page(pagetable_physmap, min, 0x02);
     }
 }
 
-#define GET_BEGINGIN_PREV_PAGE(page) ((((unsigned int)(page) >> 12) - 1) << 12)
+#define GET_BEGINGIN_PREV_PAGE(page) ((unsigned int *)((((unsigned int)(page) >> VM_PTINDEX_SHIFT) - 1) << VM_PTINDEX_SHIFT))
 
 void free_kbrk(void *min, void *max) {
     for (; min < max; min = (void *)GET_BEGINGIN_PREV_PAGE(min)) {
-        unsigned int pagetable_physmap = get_physaddr((unsigned int)min);
-        unmap_page((unsigned int)min);
-        bitmap_mark_as_free(pagetable_physmap / PAGE_SIZE);
+        unsigned int pagetable_physmap = get_physaddr(min);
+        unmap_page(min);
+        bitmap_mark_as_free(pagetable_physmap);
     }
 }
 
@@ -494,12 +503,12 @@ void set_kbrk(void *addr) {
 extern void update_kernel_stack(void *stack);
 
 void prepare_switch_to_usermode() {
-    unsigned int user_mode_upper_limit = get_kbrk();
-    unsigned int *user_page_directory = (unsigned int *)GET_BEGINGIN_PREV_PAGE(user_mode_upper_limit);
-    unsigned int *user_kernel_table_directory = (unsigned int *)GET_BEGINGIN_PREV_PAGE(user_page_directory);
-    unsigned int *user_stack_table_directory = (unsigned int *)GET_BEGINGIN_PREV_PAGE(user_kernel_table_directory);
-    unsigned int *user_stack_limit =  (unsigned int *)GET_BEGINGIN_PREV_PAGE(user_stack_table_directory);
-    unsigned int *kernel_stack_limit =  (unsigned int *)GET_BEGINGIN_PREV_PAGE(user_stack_limit);
+    unsigned int *user_mode_upper_limit = get_kbrk();
+    unsigned int *user_page_directory = GET_BEGINGIN_PREV_PAGE(user_mode_upper_limit);
+    unsigned int *user_kernel_table_directory = GET_BEGINGIN_PREV_PAGE(user_page_directory);
+    unsigned int *user_stack_table_directory = GET_BEGINGIN_PREV_PAGE(user_kernel_table_directory);
+    unsigned int *user_stack_limit =  GET_BEGINGIN_PREV_PAGE(user_stack_table_directory);
+    unsigned int *kernel_stack_limit =  GET_BEGINGIN_PREV_PAGE(user_stack_limit);
     set_kbrk(kernel_stack_limit);
 
     kprintf("user_mode_upper_limit: 0x%8h; user_page_directory: 0x%8h; user_stack_table_directory: 0x%8h; user_stack_limit: 0x%8h\n",
@@ -515,17 +524,17 @@ void prepare_switch_to_usermode() {
      * i guess in the feature i should load a elf and point directly at start entry
      */
     for (int i = 0; i < 512; i++) {
-        user_kernel_table_directory[i] = (i << 12) | 0x05; //kernel maping, read-only, user accesible, present
+        user_kernel_table_directory[i] = (i << VM_PTINDEX_SHIFT) | VM_PAGE_USER_ACCESS | VM_PAGE_PRESENT; //kernel maping
     }
     user_kernel_table_directory[1023] = (get_physaddr(kernel_stack_limit) & ~FIRST_12BITS_MASK) | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT; //kernel stack
-    update_kernel_stack(0xc004ffff); /* OK, so i need a valid stack for handling interupt, which is fine, but i still need to go back to
+    update_kernel_stack((virtaddr_t)0xc004ffff); /* OK, so i need a valid stack for handling interupt, which is fine, but i still need to go back to
                                       * kernel memory mapping to do some stuff.
                                       */
 
     memset(user_stack_table_directory, 0, PAGE_SIZE);
-    user_stack_table_directory[1023] = (get_physaddr((unsigned int)user_stack_limit) & ~FIRST_12BITS_MASK) | VM_PAGE_USER_ACCESS | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT; //user stack, read-write, user access, present
+    user_stack_table_directory[1023] = (get_physaddr(user_stack_limit) & ~FIRST_12BITS_MASK) | VM_PAGE_USER_ACCESS | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT; //user stack, read-write, user access, present
 
-    asm volatile("mov %0, %%cr3" : : "r"(get_physaddr((unsigned int)user_page_directory)));
+    asm volatile("mov %0, %%cr3" : : "r"(get_physaddr(user_page_directory)));
 
     switch_to_user_mode();
 }
