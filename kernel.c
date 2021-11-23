@@ -8,6 +8,17 @@
 #define FIRST_12BITS_MASK 0xFFF
 #define PAGE_LEN 1024
 
+#define VM_PT_MOUNT_BASE (virtaddr_t)0xB0000000
+#define VM_PDINDEX_SHIFT 22
+#define VM_PTINDEX_SHIFT 12
+#define VM_PDINDEX_TO_PTR(index) ((unsigned int *)((uint32_t)VM_PT_MOUNT_BASE | ((index) << VM_PTINDEX_SHIFT)))
+#define VM_VITRADDR_TO_PDINDEX(virtaddr) ((uint32_t)(virtaddr) >> VM_PDINDEX_SHIFT)
+#define VM_VITRADDR_TO_PTINDEX(virtaddr) ((uint32_t)(virtaddr) >> VM_PTINDEX_SHIFT & 0x03FF)
+#define VM_INDEXES_TO_PTR(pdindex, ptindex) (void *)(((pdindex) << VM_PDINDEX_SHIFT) | ((ptindex) << VM_PTINDEX_SHIFT))
+#define VM_PAGE_PRESENT 0x1
+#define VM_PAGE_READ_WRITE 0x2
+#define VM_PAGE_USER_ACCESS 0x4
+
 typedef unsigned char uint8_t;
 typedef unsigned short uint16_t;
 typedef unsigned int uint32_t;
@@ -26,6 +37,7 @@ physaddr_t get_physaddr(virtaddr_t virtaddr);
 extern void PAGE_DIRECTORY(void);
 extern void PAGE_TABLE(void);
 unsigned int * kpage_directory = (unsigned int *)&PAGE_DIRECTORY;
+
 
 extern void setup_gdt(void);
 extern void setup_idt(void);
@@ -101,16 +113,20 @@ void kmain(unsigned long magic, unsigned long addr) {
         }
     }
 
-    for (unsigned int i = 0; i < PAGE_LEN / 2; i++) {
-        //that should map the first 2Mb as used
-        bitmap_mark_as_used(i);
-    }
+    unsigned int *kpage_table_init = (unsigned int *)&PAGE_TABLE;
+    kpage_table_init[VM_VITRADDR_TO_PTINDEX(mbi)] = 0; //we dont need mbi anymore
+    kpage_directory[0] = 0; //we don't need identity mapping anymore
 
+    //lets walk the initial page table for finding physical page in use
+    for (unsigned int i = 0; i < PAGE_LEN; i++) {
+        if ((kpage_table_init[i] & 0b00000001) != 0) {
+            kprintf("addrpgy: 0x%8h\n", kpage_table_init[i] & ~FIRST_12BITS_MASK);
+            bitmap_mark_as_used(kpage_table_init[i] & ~FIRST_12BITS_MASK);
+        }
+    }
+    bitmap_mark_as_used(0); //damn BUUUGGG
     asm volatile("sti");
-   
-    //that should unmap the first megabyte ??!
-    kpage_directory[0] = 0;
-    
+
     vmm_init();
 
     prepare_switch_to_usermode();
@@ -261,21 +277,24 @@ void *memset(void* dst, int c, unsigned long size) {
 #define BITS_IN_BYTE 8
 
 void bitmap_mark_as_used(physaddr_t page) {
-    unsigned int a = page / BITS_IN_BYTE / PAGE_SIZE;
+    page /= PAGE_SIZE;
+    unsigned int a = page / BITS_IN_BYTE;
     int mask = ~(1 << (page % BITS_IN_BYTE));
 
     bitmap[a] &= mask; 
 }
 
 void bitmap_mark_as_free(physaddr_t page) {
-    unsigned int a = page / BITS_IN_BYTE / PAGE_SIZE;
+    page /= PAGE_SIZE;
+    unsigned int a = page / BITS_IN_BYTE;
     int mask = 1 << (page % BITS_IN_BYTE);
 
     bitmap[a] |= mask; 
 }
 
 int bitmap_page_status(physaddr_t page) {
-    unsigned int a = page / BITS_IN_BYTE / PAGE_SIZE;
+    page /= PAGE_SIZE;
+    unsigned int a = page / BITS_IN_BYTE;
     int mask = 1 << (page % BITS_IN_BYTE);
 
     return (bitmap[a] & mask) == 0; 
@@ -288,9 +307,10 @@ physaddr_t bitmap_find_free_page() {
     for (a = 0; a < PAGE_SIZE; a++) {
         for (b = 0; b < BITS_IN_BYTE; b++) {
             if ((bitmap[a] & (1 << b)) != 0) {
+                kprintf("pa_avret: %d %d 0x%8h\n", a, b, (a * BITS_IN_BYTE + b));
                 return (a * BITS_IN_BYTE + b) * PAGE_SIZE;    
             }
-        } 
+        }
     }
 
     return 0;
@@ -306,16 +326,7 @@ void dump_bitmap() {
     }
 }
 
-#define VM_PT_MOUNT_BASE (virtaddr_t)0xB0000000
-#define VM_PDINDEX_SHIFT 22
-#define VM_PTINDEX_SHIFT 12
-#define VM_PDINDEX_TO_PTR(index) ((unsigned int *)((uint32_t)VM_PT_MOUNT_BASE | ((index) << VM_PTINDEX_SHIFT)))
-#define VM_VITRADDR_TO_PDINDEX(virtaddr) ((uint32_t)(virtaddr) >> VM_PDINDEX_SHIFT)
-#define VM_VITRADDR_TO_PTINDEX(virtaddr) ((uint32_t)(virtaddr) >> VM_PTINDEX_SHIFT & 0x03FF)
-#define VM_INDEXES_TO_PTR(pdindex, ptindex) (void *)(((pdindex) << VM_PDINDEX_SHIFT) | ((ptindex) << VM_PTINDEX_SHIFT))
-#define VM_PAGE_PRESENT 0x1
-#define VM_PAGE_READ_WRITE 0x2
-#define VM_PAGE_USER_ACCESS 0x4
+
 
 physaddr_t get_physaddr(virtaddr_t virtaddr) {
     unsigned int pdindex = VM_VITRADDR_TO_PDINDEX(virtaddr);
@@ -353,6 +364,7 @@ void map_page(physaddr_t physadd, virtaddr_t virtaddr, unsigned int flags) {
         
         //alloc page
         physaddr_t pagetable_physmap = bitmap_find_free_page();
+        kprintf("pa: 0x%8h\n", pagetable_physmap);
         if (pagetable_physmap == 0) {
             kprintf("ERROR: could not get page\n");
             return;
@@ -404,7 +416,7 @@ void vmm_init() {
 
     unsigned int pagetable_physmap = bitmap_find_free_page();
     if (pagetable_physmap == 0) {
-        kprintf("ERROR: could not get page\n");
+        kprintf("ERROR: vmm_init: could not get page\n");
         return;
     }
 
