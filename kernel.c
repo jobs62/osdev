@@ -6,6 +6,7 @@
 #define PAGE_SIZE 4096
 
 #define FIRST_12BITS_MASK 0xFFF
+#define PAGE_LEN 1024
 
 typedef unsigned char uint8_t;
 typedef unsigned short uint16_t;
@@ -40,7 +41,7 @@ unsigned int ypos = 0;
 void kprintf(const char *format, ...);
 void itoa(char *buf, unsigned int c, unsigned int base);
 int put(char c);
-void *memcpy(void *dst, void *src, unsigned long size);
+void *memcpy(void *dst, const void *src, unsigned long size);
 void *memset(void* dst, int c, unsigned long size);
 
 void set_kbrk(void *addr);
@@ -92,16 +93,15 @@ void kmain(unsigned long magic, unsigned long addr) {
                     (unsigned) (mmap->len >> 32),
                     (unsigned) (mmap->len & ~0),
                     (unsigned) mmap->type);
-
-                if (mmap->type == MULTIBOOT_MEMORY_AVAILABLE) {
-                    for (unsigned int page = mmap->addr; page < mmap->addr + mmap->len; page += PAGE_SIZE) {
-                        bitmap_mark_as_free(page);
-                    }
+            if (mmap->type == MULTIBOOT_MEMORY_AVAILABLE) {
+                for (unsigned int page = mmap->addr; page < mmap->addr + mmap->len; page += PAGE_SIZE) {
+                    bitmap_mark_as_free(page);
                 }
+            }
         }
     }
 
-    for (unsigned int i = 0; i < 2 * 256; i++) {
+    for (unsigned int i = 0; i < PAGE_LEN / 2; i++) {
         //that should map the first 2Mb as used
         bitmap_mark_as_used(i);
     }
@@ -122,7 +122,7 @@ void kmain(unsigned long magic, unsigned long addr) {
 
 void kprintf(const char *format, ...) {
     char **args = (char **) &format;
-    int c;
+    char c;
     char *p;
     char buf[KPRINTF_BUF_SIZE];
 
@@ -236,7 +236,7 @@ int put(char c) {
 }
 
 
-void *memcpy(void *dst, void *src, unsigned long size) {
+void *memcpy(void *dst, const void *src, unsigned long size) {
     char *dp = (char *)dst;
     const char *sp = (const char *)src;
     while (size--) {
@@ -297,7 +297,7 @@ physaddr_t bitmap_find_free_page() {
 }
 
 void dump_bitmap() {
-    for (unsigned int a = 0; a < 512; a += 4) {
+    for (unsigned int a = 0; a < PAGE_LEN / 2; a += 4) {
         kprintf("0x%8h 0x%8h 0x%8h 0x%8h\n", 
                 ((unsigned int *)bitmap)[a], 
                 ((unsigned int *)bitmap)[a+1],
@@ -312,6 +312,7 @@ void dump_bitmap() {
 #define VM_PDINDEX_TO_PTR(index) ((unsigned int *)((uint32_t)VM_PT_MOUNT_BASE | ((index) << VM_PTINDEX_SHIFT)))
 #define VM_VITRADDR_TO_PDINDEX(virtaddr) ((uint32_t)(virtaddr) >> VM_PDINDEX_SHIFT)
 #define VM_VITRADDR_TO_PTINDEX(virtaddr) ((uint32_t)(virtaddr) >> VM_PTINDEX_SHIFT & 0x03FF)
+#define VM_INDEXES_TO_PTR(pdindex, ptindex) (void *)(((pdindex) << VM_PDINDEX_SHIFT) | ((ptindex) << VM_PTINDEX_SHIFT))
 #define VM_PAGE_PRESENT 0x1
 #define VM_PAGE_READ_WRITE 0x2
 #define VM_PAGE_USER_ACCESS 0x4
@@ -385,13 +386,13 @@ void unmap_page(virtaddr_t virtaddr) {
     pt[ptindex] = 0;
 
     int i;
-    for (i = 0; i < 1024; i++) {
+    for (i = 0; i < PAGE_LEN; i++) {
         if (pt[i] != 0) {
             break;
         }
     }
 
-    if (i == 1024) {
+    if (i == PAGE_LEN) {
         kpage_directory[pdindex] = 0;
         unmap_page(pt);
         //bitmap_mark_as_free(virtaddr); that is a bug rigth ?
@@ -412,22 +413,24 @@ void vmm_init() {
     
     //use the last page of the bootloaded page table to bootstrap the maps' map
     //tmp = ((unsigned int *)&PAGE_TABLE)[1023];
-    ((unsigned int *)&PAGE_TABLE)[1023] = (pagetable_physmap & ~FIRST_12BITS_MASK) | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT;
-    vmm_base = (unsigned int *)0xC03ff000;
-    memset(vmm_base, 0, 1024);
+    ((unsigned int *)&PAGE_TABLE)[PAGE_LEN - 1] = (pagetable_physmap & ~FIRST_12BITS_MASK) | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT;
+    vmm_base = VM_INDEXES_TO_PTR(VM_VITRADDR_TO_PDINDEX(KERNAL_MAP_BASE), PAGE_LEN - 1);
+    memset(vmm_base, 0, PAGE_LEN);
     vmm_base[VM_VITRADDR_TO_PDINDEX(VM_PT_MOUNT_BASE)] = (pagetable_physmap & ~FIRST_12BITS_MASK) | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT;
     vmm_base = VM_PT_MOUNT_BASE;
     //((unsigned int *)&PAGE_TABLE)[1023] = 0; /* if uncommentaed, it crash everithing ?? need to be investigated */
 
-    vmm_base[704 * 1024 + 768] = ((unsigned int)(&PAGE_TABLE) & ~FIRST_12BITS_MASK) | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT;
+    vmm_base[VM_VITRADDR_TO_PDINDEX(VM_PT_MOUNT_BASE) * PAGE_LEN + VM_VITRADDR_TO_PDINDEX(KERNAL_MAP_BASE)] = ((unsigned int)(&PAGE_TABLE) & ~FIRST_12BITS_MASK) | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT;
 }
+
+
 
 void *get_kbrk() {
     int pdindex;
     int ptindex;
 
-    for (pdindex = 1023; pdindex > 0; pdindex--) {
-        ptindex = 1023;
+    for (pdindex = PAGE_LEN - 1; pdindex > 0; pdindex--) {
+        ptindex = PAGE_LEN - 1;
         if ((kpage_directory[pdindex] & 0x00000001) == 0) {
             goto get_brk_endloop;
         }
@@ -441,15 +444,15 @@ void *get_kbrk() {
     }
 get_brk_endloop:
 
-    if (pdindex == 1023 && ptindex == 1023) {
+    if (pdindex == PAGE_LEN - 1  && ptindex == PAGE_LEN - 1) {
         return (void *)~0;
     }
 
-    return (void *)((pdindex << VM_PDINDEX_SHIFT) | (ptindex << VM_PTINDEX_SHIFT));
+    return VM_INDEXES_TO_PTR(pdindex, ptindex);
 }
 
 void alloc_kbrk(void *min, void *max) {
-    if (max == ~0) {
+    if (max == (void *)~0) {
         //carful with overflow at first alloc
         unsigned int pagetable_physmap = bitmap_find_free_page();
         if (pagetable_physmap == 0) {
@@ -459,9 +462,9 @@ void alloc_kbrk(void *min, void *max) {
 
         bitmap_mark_as_used(pagetable_physmap);
 
-        map_page(pagetable_physmap, ~0 & ~FIRST_12BITS_MASK, VM_PAGE_READ_WRITE);
+        map_page(pagetable_physmap, (void *)(~0 & ~FIRST_12BITS_MASK), VM_PAGE_READ_WRITE);
 
-        max = ~0 & ~FIRST_12BITS_MASK;
+        max = (void*)(~0 & ~FIRST_12BITS_MASK);
     }
 
     for (; min < max; min += PAGE_SIZE) {
@@ -488,15 +491,15 @@ void free_kbrk(void *min, void *max) {
 }
 
 void set_kbrk(void *addr) {
-    void *min;
-    void *max;
+    void *a;
+    void *b;
 
-    min = addr;
-    max = get_kbrk();
-    if (min > max) {
-        free_kbrk(max, min);
+    a = addr;
+    b = get_kbrk();
+    if (a > b) {
+        free_kbrk(b, a);
     } else {
-        alloc_kbrk(min, max);
+        alloc_kbrk(a, b);
     }
 }
 
@@ -526,7 +529,7 @@ void prepare_switch_to_usermode() {
      * having to map kernel code is terrible but as for now it's a good PoC
      * i guess in the feature i should load a elf and point directly at start entry
      */
-    for (int i = 0; i < 512; i++) {
+    for (int i = 0; i < PAGE_LEN / 2; i++) {
         user_kernel_table_directory[i] = (i << VM_PTINDEX_SHIFT) | VM_PAGE_USER_ACCESS | VM_PAGE_PRESENT; //kernel maping
     }
     user_kernel_table_directory[VM_VITRADDR_TO_PTINDEX(USER_KERN_STACK)] = (get_physaddr(kernel_stack_limit) & ~FIRST_12BITS_MASK) | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT; //kernel stack
