@@ -545,9 +545,19 @@ void prepare_switch_to_usermode() {
      * having to map kernel code is terrible but as for now it's a good PoC
      * i guess in the feature i should load a elf and point directly at start entry
      */
-    for (int i = 0; i < PAGE_LEN / 2; i++) {
-        user_kernel_table_directory[i] = (i << VM_PTINDEX_SHIFT) | VM_PAGE_USER_ACCESS | VM_PAGE_PRESENT; //kernel maping
+    unsigned int *kpage_table_init = (unsigned int *)&PAGE_TABLE;
+    for (int i = 0; i < PAGE_LEN; i++) {
+        if ((kpage_table_init[i] & VM_PAGE_PRESENT) == 0) {
+            continue;
+        }
+
+        if ((kpage_table_init[i] & VM_PAGE_READ_WRITE) != 0) {
+            user_kernel_table_directory[i] = kpage_table_init[i]; //do not give access to kernel stack to userspace
+        } else {
+            user_kernel_table_directory[i] = kpage_table_init[i] | VM_PAGE_USER_ACCESS; //map kernel for userspace
+        }
     }
+
     user_kernel_table_directory[VM_VITRADDR_TO_PTINDEX(USER_KERN_STACK)] = (get_physaddr(kernel_stack_limit) & ~FIRST_12BITS_MASK) | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT; //kernel stack
     update_kernel_stack(USER_KERN_STACK); /* OK, so i need a valid stack for handling interupt, which is fine, but i still need to go back to
                                       * kernel memory mapping to do some stuff.
