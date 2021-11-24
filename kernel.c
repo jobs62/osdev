@@ -34,6 +34,8 @@ physaddr_t bitmap_find_free_page();
 void dump_bitmap();
 physaddr_t get_physaddr(virtaddr_t virtaddr);
 
+void sleep(unsigned int t);
+
 extern void PAGE_DIRECTORY(void);
 extern void PAGE_TABLE(void);
 unsigned int * kpage_directory = (unsigned int *)&PAGE_DIRECTORY;
@@ -63,6 +65,8 @@ void *get_kbrk();
 
 void prepare_switch_to_usermode(void);
 extern void switch_to_user_mode(void);
+
+extern void pci_scan_bus(uint8_t bus);
 
 #define CHECK_FLAG(flags,bit)   ((flags) & (1 << (bit)))
 
@@ -128,6 +132,8 @@ void kmain(unsigned long magic, unsigned long addr) {
     }
     bitmap_mark_as_used(0); //damn BUUUGGG
     asm volatile("sti");
+
+    pci_scan_bus(0);
 
     vmm_init();
 
@@ -309,7 +315,6 @@ physaddr_t bitmap_find_free_page() {
     for (a = 0; a < PAGE_SIZE; a++) {
         for (b = 0; b < BITS_IN_BYTE; b++) {
             if ((bitmap[a] & (1 << b)) != 0) {
-                kprintf("pa_avret: %d %d 0x%8h\n", a, b, (a * BITS_IN_BYTE + b));
                 return (a * BITS_IN_BYTE + b) * PAGE_SIZE;    
             }
         }
@@ -348,7 +353,7 @@ physaddr_t get_physaddr(virtaddr_t virtaddr) {
         kprintf("pte not present\n");
         return (0);
     }
-    kprintf("pt: 0x%8h\n", pt);
+    //kprintf("pt: 0x%8h\n", pt);
 
     return (ptentry & ~FIRST_12BITS_MASK) + ((unsigned int)virtaddr & FIRST_12BITS_MASK);
 }
@@ -569,4 +574,12 @@ void prepare_switch_to_usermode() {
     asm volatile("mov %0, %%cr3" : : "r"(get_physaddr(user_page_directory)));
 
     switch_to_user_mode();
+}
+
+extern unsigned int tick;
+void sleep(unsigned int t) {
+    tick = t / 55 + 1;
+    while(tick != 0) {
+        asm volatile("nop");
+    }
 }

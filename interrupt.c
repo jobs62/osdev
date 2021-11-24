@@ -95,7 +95,18 @@ void PIC_remap(int offset1, int offset2);
 
 #define PIC_EOI 0x20 //End of interrupt command
 
+unsigned int tick = 0;
+
 void interrupt_handler(struct cpu_state cpu, unsigned int interrupt, struct stack_state stack) {
+    if (interrupt == 0x20) {
+        if (tick > 0) {
+            tick--;
+        }
+        PIC_sendEOI(interrupt);
+        return;
+    }
+
+    
         kprintf("CS=0x%8h, int_no=%d, err_code=0x%8h\n", stack.cs, interrupt, stack.error_code);
         kprintf("EDI=0x%8h, ESI=0x%8h, EBP=0x%8h\n", cpu.edi, cpu.esi, cpu.ebp);
         kprintf("ESP=0x%8h, EBX=0x%8h, EDX=0x%8h\n", cpu.esp, cpu.ebx, cpu.edx);
@@ -174,7 +185,7 @@ void setup_idt() {
 
     asm volatile("lidt %0" : : "m" (idt_base));
 
-    outb(PIC1_DATA, 0b11111001); //mask all interupt execept keyboard
+    outb(PIC1_DATA, 0b11111000); //mask all interupt execept keyboard
     outb(PIC2_DATA, 0b11111111);
 }
 
