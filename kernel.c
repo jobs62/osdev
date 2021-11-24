@@ -114,7 +114,9 @@ void kmain(unsigned long magic, unsigned long addr) {
     }
 
     unsigned int *kpage_table_init = (unsigned int *)&PAGE_TABLE;
+    flush_tlb_single(0x9000);
     kpage_table_init[VM_VITRADDR_TO_PTINDEX(mbi)] = 0; //we dont need mbi anymore
+    flush_tlb_single(0);
     kpage_directory[0] = 0; //we don't need identity mapping anymore
 
     //lets walk the initial page table for finding physical page in use
@@ -430,7 +432,9 @@ void vmm_init() {
     memset(vmm_base, 0, PAGE_LEN);
     vmm_base[VM_VITRADDR_TO_PDINDEX(VM_PT_MOUNT_BASE)] = (pagetable_physmap & ~FIRST_12BITS_MASK) | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT;
     vmm_base = VM_PT_MOUNT_BASE;
-    //((unsigned int *)&PAGE_TABLE)[1023] = 0; /* if uncommentaed, it crash everithing ?? need to be investigated */
+
+    flush_tlb_single(pagetable_physmap);
+    ((unsigned int *)&PAGE_TABLE)[PAGE_LEN - 1] = (pagetable_physmap & ~FIRST_12BITS_MASK) | VM_PAGE_READ_WRITE;
 
     vmm_base[VM_VITRADDR_TO_PDINDEX(VM_PT_MOUNT_BASE) * PAGE_LEN + VM_VITRADDR_TO_PDINDEX(KERNAL_MAP_BASE)] = ((unsigned int)(&PAGE_TABLE) & ~FIRST_12BITS_MASK) | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT;
 }

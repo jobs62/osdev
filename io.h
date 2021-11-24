@@ -11,3 +11,7 @@ static inline unsigned char inb(unsigned short port) {
 static inline void io_wait(void) {
     outb(0x80, 0);
 }
+
+static inline void flush_tlb_single(unsigned int addr) {
+   asm volatile("invlpg (%0)" ::"r" (addr) : "memory");
+}
