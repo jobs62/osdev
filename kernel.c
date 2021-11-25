@@ -1,5 +1,6 @@
 #include "multiboot.h"
 #include "io.h"
+#include "stdtype.h"
 
 #define ROW 25
 #define COL 80
@@ -18,13 +19,6 @@
 #define VM_PAGE_PRESENT 0x1
 #define VM_PAGE_READ_WRITE 0x2
 #define VM_PAGE_USER_ACCESS 0x4
-
-typedef unsigned char uint8_t;
-typedef unsigned short uint16_t;
-typedef unsigned int uint32_t;
-typedef unsigned long long uint64_t;
-typedef void* virtaddr_t;
-typedef uint32_t physaddr_t;
 
 unsigned char bitmap[PAGE_SIZE];
 void bitmap_mark_as_used(physaddr_t page);
