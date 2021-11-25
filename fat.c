@@ -71,9 +71,15 @@ struct fat_directory_entry {
 	uint32_t DIR_FileSize;
 };
 
-#define FAT_TYPE_12 0
-#define FAT_TYPE_16 1
-#define FAT_TYPE_32 2
+struct {
+	uint8_t fat_type;
+	struct fat_bpb bpb;
+}
+
+#define FAT_TYPE_12 1
+#define FAT_TYPE_16 2
+#define FAT_TYPE_32 3
+#define FAT_TYPE_NONE 0
 
 void fat_init(uint8_t drive) {
 	struct fat_bpb bpb;
@@ -83,9 +89,6 @@ void fat_init(uint8_t drive) {
 		kprintf("ide_read_sectore error\n");
 		return;
 	}
-
-	kprintf("BPB_FATz16: 0x%4h\n", bpb.common.BPB_FATz16);
-	kprintf("BPB_TotSec16: 0x%4h\n", bpb.common.BPB_TotSec16);
 
 	uint32_t RootDirSectors = ((bpb.common.BPB_RootEntCnt * 32) + (bpb.common.BPB_BytsPerSec - 1)) / bpb.common.BPB_BytsPerSec;
 	uint32_t FATz;
@@ -103,15 +106,8 @@ void fat_init(uint8_t drive) {
 		TotSec = bpb.common.BPB_TotSec32;
 	}
 
-	kprintf("RootDirSectors: 0x%8h\n", RootDirSectors);
-	kprintf("FATz: 0x%8h\n", FATz);
-	kprintf("TotSec: 0x%8h\n", TotSec);
-
 	uint32_t DataSec = TotSec - (bpb.common.BPB_RsvdSecCnt + (bpb.common.BPB_NumFATs * FATz) + RootDirSectors);
 	uint32_t CountofClusters = DataSec / bpb.common.BPB_SecPerClus;
-
-	kprintf("DataSec: 0x%8h\n", DataSec);
-	kprintf("CountofClusters: 0x%8h\n", CountofClusters);
 
 	if (CountofClusters < 4085) {
 		fat_type = FAT_TYPE_12;
@@ -156,6 +152,7 @@ void fat_init(uint8_t drive) {
 			return;
 		}
 	}
+	//until here it's fine
 
 	switch (fat_type) {
 		case FAT_TYPE_16:

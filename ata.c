@@ -27,7 +27,7 @@ static unsigned char ide_read(unsigned char channel, unsigned char reg);
 static void ide_write(unsigned char channel, unsigned char reg, unsigned char data);
 static void ide_read_buffer(unsigned char channel, unsigned char reg, unsigned int buffer, unsigned int quads);
 static uint8_t ide_polling(uint8_t channel, uint8_t advanced_check);
-static uint8_t ide_ata_access(uint8_t direction, uint8_t drive, uint32_t lba, uint8_t numsects, uint32_t edi);
+static uint8_t ide_ata_access(uint8_t direction, uint8_t drive, uint32_t lba, uint8_t numsects, void *edi);
 
 
 #define ATA_PRIMARY 0x00
@@ -133,10 +133,10 @@ void ata_init(struct pci_header *head) {
 	bar4 = head->specific.type0.bar4; // probably 0
 
 	// 1- Detect I/O Ports which interface IDE Controller:
-	channels[ATA_PRIMARY].base = (bar0 & 0xFFFFFFFC) + 0x1F0 * (!bar0);
-	channels[ATA_PRIMARY].ctrl = (bar1 & 0xFFFFFFFC) + 0x3F6 * (!bar1);
-	channels[ATA_SECONDARY].base = (bar2 & 0xFFFFFFFC) + 0x170 * (!bar2);
-	channels[ATA_SECONDARY].ctrl = (bar3 & 0xFFFFFFFC) + 0x376 * (!bar3);
+	channels[ATA_PRIMARY].base = bar0 & 0xFFFFFFFC;
+	channels[ATA_PRIMARY].ctrl = bar1 & 0xFFFFFFFC;
+	channels[ATA_SECONDARY].base = bar2 & 0xFFFFFFFC;
+	channels[ATA_SECONDARY].ctrl = bar3 & 0xFFFFFFFC;
 	channels[ATA_PRIMARY].bmide = (bar4 & 0xFFFFFFFC) + 0;   // Bus Master IDE
 	channels[ATA_SECONDARY].bmide = (bar4 & 0xFFFFFFFC) + 8; // Bus Master IDE
 
@@ -288,7 +288,7 @@ static void ide_read_buffer(unsigned char channel, unsigned char reg, unsigned i
 		ide_write(channel, ATA_REG_CONTROL, channels[channel].nIEN);
 }
 
-static uint8_t ide_ata_access(uint8_t direction, uint8_t drive, uint32_t lba, uint8_t numsects, uint32_t edi) {
+static uint8_t ide_ata_access(uint8_t direction, uint8_t drive, uint32_t lba, uint8_t numsects, void *edi) {
 	uint8_t lba_mode, cmd;
 	uint8_t lba_io[6];
 	uint8_t channel = ide_devices[drive].Channel;
@@ -434,7 +434,7 @@ static uint8_t ide_polling(uint8_t channel, uint8_t advanced_check) {
 }
 
 
-uint8_t ide_read_sectors(uint8_t drive, uint8_t numsects, uint32_t lba, uint32_t edi) {
+uint8_t ide_read_sectors(uint8_t drive, uint8_t numsects, uint32_t lba, void *edi) {
 	// 1: Check if the drive presents:
 	if (drive > 3 || ide_devices[drive].Reserved == 0) {
 		return 1;
