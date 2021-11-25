@@ -14,6 +14,7 @@ typedef unsigned long long uint64_t;
 #define PCI_UNKNOWN_VENDOR_ID 0xFFFF
 
 extern void kprintf(const char *format, ...);
+void fat_init(uint8_t drive);
 
 struct pci_header {
 	uint16_t vendor_id;
@@ -161,6 +162,9 @@ struct ide_device {
 unsigned char ide_read(unsigned char channel, unsigned char reg);
 void ide_write(unsigned char channel, unsigned char reg, unsigned char data);
 void ide_read_buffer(unsigned char channel, unsigned char reg, unsigned int buffer, unsigned int quads);
+uint8_t ide_polling(uint8_t channel, uint8_t advanced_check);
+uint8_t ide_ata_access(uint8_t direction, uint8_t drive, uint32_t lba, uint8_t numsects, uint32_t edi);
+uint8_t ide_read_sectors(uint8_t drive, uint8_t numsects, uint32_t lba, uint32_t edi);
 
 #define ATA_PRIMARY 0x00
 #define ATA_SECONDARY 0x01
@@ -358,10 +362,16 @@ void ata_init(struct pci_header *head) {
 		if (ide_devices[i].Reserved == 1) {
 			kprintf(" Found %s Drive %dGB - %s\n", (const char *[]){"ATA", "ATAPI"}[ide_devices[i].Type],
 				  ide_devices[i].Size / 1024 / 1024 / 2, ide_devices[i].Model);
+
+			if (ide_devices[i].Type == 0) {
+				fat_init(i);
+			}
 		}
 }
 
 unsigned char ide_read(unsigned char channel, unsigned char reg) {
+	//kprintf("ide_read: reg: Ox%2h\n", reg);
+
 	unsigned char result;
 	if (reg > 0x07 && reg < 0x0C)
 		ide_write(channel, ATA_REG_CONTROL, 0x80 | channels[channel].nIEN);
@@ -379,6 +389,8 @@ unsigned char ide_read(unsigned char channel, unsigned char reg) {
 }
 
 void ide_write(unsigned char channel, unsigned char reg, unsigned char data) {
+	//kprintf("ide_write: reg: Ox%2h; data: 0x%2h\n", reg, data);
+
 	if (reg > 0x07 && reg < 0x0C)
 		ide_write(channel, ATA_REG_CONTROL, 0x80 | channels[channel].nIEN);
 	if (reg < 0x08)
@@ -409,4 +421,383 @@ void ide_read_buffer(unsigned char channel, unsigned char reg, unsigned int buff
 	}
 	if (reg > 0x07 && reg < 0x0C)
 		ide_write(channel, ATA_REG_CONTROL, channels[channel].nIEN);
+}
+
+uint8_t ide_ata_access(uint8_t direction, uint8_t drive, uint32_t lba, uint8_t numsects, uint32_t edi) {
+	uint8_t lba_mode, cmd;
+	uint8_t lba_io[6];
+	uint8_t channel = ide_devices[drive].Channel;
+	uint8_t slavebit = ide_devices[drive].Drive;
+	uint32_t bus = channels[channel].base;
+	uint32_t words = 256;
+	uint16_t cyl, i;
+	uint8_t head, sect, err;
+	uint8_t dma;
+
+	if (lba >= 0x10000000) {
+		//LBA48
+		lba_mode = 2;
+		lba_io[0] = (lba & 0x000000FF) >> 0;
+    	lba_io[1] = (lba & 0x0000FF00) >> 8;
+    	lba_io[2] = (lba & 0x00FF0000) >> 16;
+    	lba_io[3] = (lba & 0xFF000000) >> 24;
+    	lba_io[4] = 0; // LBA28 is integer, so 32-bits are enough to access 2TB.
+    	lba_io[5] = 0; // LBA28 is integer, so 32-bits are enough to access 2TB.
+      	head      = 0; // Lower 4-bits of HDDEVSEL are not used here.
+	} else if (ide_devices[drive].Capabilities & 0x200) {
+		//LBA28
+		lba_mode  = 1;
+      	lba_io[0] = (lba & 0x00000FF) >> 0;
+      	lba_io[1] = (lba & 0x000FF00) >> 8;
+      	lba_io[2] = (lba & 0x0FF0000) >> 16;
+      	lba_io[3] = 0; // These Registers are not used here.
+      	lba_io[4] = 0; // These Registers are not used here.
+      	lba_io[5] = 0; // These Registers are not used here.
+      	head      = (lba & 0xF000000) >> 24;
+	} else {
+		//CHS
+      	lba_mode  = 0;
+      	sect      = (lba % 63) + 1;
+      	cyl       = (lba + 1  - sect) / (16 * 63);
+      	lba_io[0] = sect;
+      	lba_io[1] = (cyl >> 0) & 0xFF;
+      	lba_io[2] = (cyl >> 8) & 0xFF;
+      	lba_io[3] = 0;
+      	lba_io[4] = 0;
+      	lba_io[5] = 0;
+      	head      = (lba + 1  - sect) % (16 * 63) / (63); // Head number is written to HDDEVSEL lower 4-bits.
+	}
+
+   	// (II) See if drive supports DMA or not;
+   	dma = 0; // We don't support DMA
+
+   // (III) Wait if the drive is busy;
+   while (ide_read(channel, ATA_REG_STATUS) & ATA_SR_BSY) {}
+
+    // (IV) Select Drive from the controller;
+   if (lba_mode == 0) {
+    	ide_write(channel, ATA_REG_HDDEVSEL, 0xA0 | (slavebit << 4) | head); // Drive & CHS.
+	} else {
+    	ide_write(channel, ATA_REG_HDDEVSEL, 0xE0 | (slavebit << 4) | head); // Drive & LBA
+	}
+
+	// (V) Write Parameters;
+   	if (lba_mode == 2) {
+      	ide_write(channel, ATA_REG_SECCOUNT1,   0);
+      	ide_write(channel, ATA_REG_LBA3,   lba_io[3]);
+      	ide_write(channel, ATA_REG_LBA4,   lba_io[4]);
+      	ide_write(channel, ATA_REG_LBA5,   lba_io[5]);
+   	}
+	ide_write(channel, ATA_REG_SECCOUNT0,   numsects);
+   	ide_write(channel, ATA_REG_LBA0,   lba_io[0]);
+   	ide_write(channel, ATA_REG_LBA1,   lba_io[1]);
+   	ide_write(channel, ATA_REG_LBA2,   lba_io[2]);
+
+	if (lba_mode == 0 && dma == 0 && direction == 0) cmd = ATA_CMD_READ_PIO;
+   	if (lba_mode == 1 && dma == 0 && direction == 0) cmd = ATA_CMD_READ_PIO;   
+   	if (lba_mode == 2 && dma == 0 && direction == 0) cmd = ATA_CMD_READ_PIO_EXT;   
+   	if (lba_mode == 0 && dma == 1 && direction == 0) cmd = ATA_CMD_READ_DMA;
+   	if (lba_mode == 1 && dma == 1 && direction == 0) cmd = ATA_CMD_READ_DMA;
+   	if (lba_mode == 2 && dma == 1 && direction == 0) cmd = ATA_CMD_READ_DMA_EXT;
+   	if (lba_mode == 0 && dma == 0 && direction == 1) cmd = ATA_CMD_WRITE_PIO;
+   	if (lba_mode == 1 && dma == 0 && direction == 1) cmd = ATA_CMD_WRITE_PIO;
+   	if (lba_mode == 2 && dma == 0 && direction == 1) cmd = ATA_CMD_WRITE_PIO_EXT;
+   	if (lba_mode == 0 && dma == 1 && direction == 1) cmd = ATA_CMD_WRITE_DMA;
+   	if (lba_mode == 1 && dma == 1 && direction == 1) cmd = ATA_CMD_WRITE_DMA;
+   	if (lba_mode == 2 && dma == 1 && direction == 1) cmd = ATA_CMD_WRITE_DMA_EXT;
+	ide_write(channel, ATA_REG_COMMAND, cmd);
+	
+	if (dma == 1) {
+		//No DMA support for now
+	} else {
+		if (direction == ATA_READ) {
+			//Read
+			for (i = 0; i < numsects; i++) {
+				if ((err = ide_polling(channel, 1)) != 0) {
+					return err;
+				}
+				
+				for (unsigned int j = 0; j < words; j++) {
+					*(uint16_t *)edi = inw(channels[channel].base + ATA_REG_DATA);
+					edi += 2;
+				}
+			}
+		} else {
+			//No suppoort for write for now
+		}
+	}
+
+	return (0);
+}
+
+uint8_t ide_polling(uint8_t channel, uint8_t advanced_check) {
+	// (I) Delay 400 nanosecond for BSY to be set:
+   	// -------------------------------------------------
+   	for(int i = 0; i < 4; i++) {
+      	ide_read(channel, ATA_REG_ALTSTATUS); // Reading the Alternate Status port wastes 100ns; loop four times.
+	}
+
+   	// (II) Wait for BSY to be cleared:
+   	// -------------------------------------------------
+   	while (ide_read(channel, ATA_REG_STATUS) & ATA_SR_BSY) {}
+ 
+   	if (advanced_check) {
+    	unsigned char state = ide_read(channel, ATA_REG_STATUS); // Read Status Register.
+ 
+      	// (III) Check For Errors:
+      	// -------------------------------------------------
+      	if (state & ATA_SR_ERR) {
+        	return 2; // Error.
+		}
+ 
+      	// (IV) Check If Device fault:
+      	// -------------------------------------------------
+      	if (state & ATA_SR_DF) {
+        	return 1; // Device Fault.
+		}
+ 
+      	// (V) Check DRQ:
+      	// -------------------------------------------------
+      	// BSY = 0; DF = 0; ERR = 0 so we should check for DRQ now.
+      	if ((state & ATA_SR_DRQ) == 0) {
+        	return 3; // DRQ should be set
+		}
+ 
+   	}
+ 
+   return 0; // No Error.
+}
+
+
+uint8_t ide_read_sectors(uint8_t drive, uint8_t numsects, uint32_t lba, uint32_t edi) {
+	// 1: Check if the drive presents:
+	if (drive > 3 || ide_devices[drive].Reserved == 0) {
+		return 1;
+	}
+
+	// 2: Check if inputs are valid:
+	if (((lba + numsects) > ide_devices[drive].Size) && (ide_devices[drive].Type == IDE_ATA)) {
+		return 2;
+	}
+
+	if (ide_devices[drive].Type == IDE_ATA) {
+		return ide_ata_access(ATA_READ, drive, lba, numsects, edi);
+	}
+
+	return 4;
+}
+
+
+/*
+ * FAT
+ */
+
+struct fat_bpb_common {
+	uint8_t BS_jmpBoot[3];
+	uint8_t BS_OEMName[8];
+	uint16_t BPB_BytsPerSec;
+	uint8_t BPB_SecPerClus;
+	uint16_t BPB_RsvdSecCnt;
+	uint8_t BPB_NumFATs;
+	uint16_t BPB_RootEntCnt;
+	uint16_t BPB_TotSec16;
+	uint8_t BPB_Media;
+	uint16_t BPB_FATz16;
+	uint16_t BPB_SecPerTrk;
+	uint16_t BPB_NumHeads;
+	uint32_t BPB_HiddSec;
+	uint32_t BPB_TotSec32;
+} __attribute__((packed));
+
+struct fat16_extended {
+	uint8_t BS_DrvNum;
+	uint8_t BS_Reserved1;
+	uint8_t BS_BootSig;
+	uint32_t BS_VolID;
+	uint8_t BS_VolLab[11];
+	uint8_t BS_FilSysType[8];
+	uint8_t Reserved2[448];
+	uint16_t Signature_word;
+} __attribute__((packed));
+
+struct fat32_extended {
+	uint32_t BPB_FATz32;
+	uint16_t BPB_ExtFlags;
+	uint16_t BPB_FSVer;
+	uint32_t BPB_RootClus;
+	uint16_t BPB_FSInfo;
+	uint16_t BPB_BkBootSec;
+	uint8_t BPB_Reserved[12];
+	uint8_t BS_DrvNum;
+	uint8_t BS_Reserved1;
+	uint8_t BS_BootSig;
+	uint32_t BS_VolID;
+	uint8_t BS_VolLab[11];
+	uint8_t BS_FilSysType[8];
+	uint8_t Reserved2[420];
+	uint16_t Signature_word;
+} __attribute__((packed));
+
+struct fat_bpb {
+	struct fat_bpb_common common;
+	union {
+		struct fat16_extended fat16;
+		struct fat32_extended fat32;
+	} extended;
+} __attribute__((packed));
+
+struct fat_directory_entry {
+	uint8_t DIR_Name[11];
+	uint8_t DIR_Attr;
+	uint8_t DIR_NTRes;
+	uint8_t DIR_CrtTimeTenth;
+	uint16_t DIR_CrtTime;
+	uint16_t DIR_CrtDate;
+	uint16_t DIR_LstAccDate;
+	uint16_t DIR_FstClusHI;
+	uint16_t DIR_WrtTime;
+	uint16_t DIR_WrtDate;
+	uint16_t DIR_FstClusLO;
+	uint32_t DIR_FileSize;
+};
+
+#define FAT_TYPE_12 0
+#define FAT_TYPE_16 1
+#define FAT_TYPE_32 2
+
+void fat_init(uint8_t drive) {
+	struct fat_bpb bpb;
+	uint8_t fat_type;
+
+	if (ide_read_sectors(drive, 1, 0, &bpb) != 0) {
+		kprintf("ide_read_sectore error\n");
+		return;
+	}
+
+	kprintf("BPB_FATz16: 0x%4h\n", bpb.common.BPB_FATz16);
+	kprintf("BPB_TotSec16: 0x%4h\n", bpb.common.BPB_TotSec16);
+
+	uint32_t RootDirSectors = ((bpb.common.BPB_RootEntCnt * 32) + (bpb.common.BPB_BytsPerSec - 1)) / bpb.common.BPB_BytsPerSec;
+	uint32_t FATz;
+	uint32_t TotSec;
+
+	if (bpb.common.BPB_FATz16 != 0) {
+		FATz = bpb.common.BPB_FATz16;
+	} else {
+		FATz = bpb.extended.fat32.BPB_FATz32;
+	}
+
+	if (bpb.common.BPB_TotSec16 != 0) {
+		TotSec = bpb.common.BPB_TotSec16;
+	} else {
+		TotSec = bpb.common.BPB_TotSec32;
+	}
+
+	kprintf("RootDirSectors: 0x%8h\n", RootDirSectors);
+	kprintf("FATz: 0x%8h\n", FATz);
+	kprintf("TotSec: 0x%8h\n", TotSec);
+
+	uint32_t DataSec = TotSec - (bpb.common.BPB_RsvdSecCnt + (bpb.common.BPB_NumFATs * FATz) + RootDirSectors);
+	uint32_t CountofClusters = DataSec / bpb.common.BPB_SecPerClus;
+
+	kprintf("DataSec: 0x%8h\n", DataSec);
+	kprintf("CountofClusters: 0x%8h\n", CountofClusters);
+
+	if (CountofClusters < 4085) {
+		fat_type = FAT_TYPE_12;
+		kprintf("Fat12 not supported\n");
+		return;
+	} else if (CountofClusters < 65525) {
+		fat_type = FAT_TYPE_16;
+	} else {
+		fat_type = FAT_TYPE_32;
+	}
+
+	if (bpb.common.BS_jmpBoot[0] != 0xeb) {
+		kprintf("jmp boot fail\n");
+		return;
+	} 
+
+	if (fat_type == FAT_TYPE_12 || fat_type == FAT_TYPE_16) {
+		//Check for FAT12/16
+		if (bpb.extended.fat16.Signature_word != 0xAA55) {
+			kprintf("sig fail\n");
+			return;
+		}
+
+		if (bpb.common.BPB_RootEntCnt * 32 % bpb.common.BPB_BytsPerSec != 0) {
+			kprintf("BPB_RootEntCnt fail\n");
+			return;
+		}
+	} else {
+		//Check for FAT32
+		if (bpb.extended.fat32.Signature_word != 0xAA55) {
+			kprintf("sig fail\n");
+			return;
+		}
+
+		if (RootDirSectors != 0) {
+			kprintf("root_dir_sectors fail\n");
+			return;
+		}
+
+		if (bpb.common.BPB_RootEntCnt != 0) {
+			kprintf("BPB_RootEntCnt fail\n");
+			return;
+		}
+	}
+
+	switch (fat_type) {
+		case FAT_TYPE_16:
+			kprintf("FAT16\n");
+			break;
+		case FAT_TYPE_32:
+			kprintf("FAT32\n");
+			break;
+	}
+
+	uint32_t FirstRotDirSecNum = bpb.common.BPB_RsvdSecCnt + (bpb.common.BPB_NumFATs * bpb.common.BPB_FATz16);
+	struct fat_directory_entry fat_root_dir[16];
+
+	kprintf("FirstRotDirSecNum: 0x%8h; BPB_RootEntCnt: 0x%8h\n", FirstRotDirSecNum, bpb.common.BPB_RootEntCnt);
+
+	if (ide_read_sectors(drive, 1, FirstRotDirSecNum, fat_root_dir) != 0) {
+		kprintf("ide_read_sectore error\n");
+		return;
+	}
+
+	char buffer[512];
+	for (int i = 0; i < 16; i++) {
+		if (fat_root_dir[i].DIR_Name[0] == '\0') {
+			kprintf("last entry\n");
+			break;
+		}
+
+		if (fat_root_dir[i].DIR_Name[0] == 0xE5) {
+			continue; //free space; skip
+		}
+
+		if (fat_root_dir[i].DIR_Attr == (0x01 | 0x02 | 0x04 | 0x08)) {
+			kprintf("long name\n");
+			continue;
+		}
+ 
+		buffer[11] = '\0';
+		memcpy(buffer, fat_root_dir[i].DIR_Name, 11);
+		kprintf("dir_entry: name: %s\n", buffer);
+
+		uint32_t data_cluster = (fat_root_dir[i].DIR_FstClusHI << 16) | fat_root_dir[i].DIR_FstClusLO;
+		uint32_t first_data_sector = bpb.common.BPB_RsvdSecCnt + (bpb.common.BPB_NumFATs * FATz) + RootDirSectors;
+		uint32_t sector = ((data_cluster - 2) * bpb.common.BPB_SecPerClus) + first_data_sector;
+
+		kprintf("sector: 0x%8h\n", sector);
+		if (ide_read_sectors(drive, 1, sector, buffer) != 0) {
+			kprintf("ide_read_sectore error\n");
+			return;
+		}
+
+		buffer[fat_root_dir[i].DIR_FileSize] = '\0';
+
+		kprintf("file content: %s\n", buffer);
+	}
 }

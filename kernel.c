@@ -338,7 +338,6 @@ void dump_bitmap() {
 physaddr_t get_physaddr(virtaddr_t virtaddr) {
     unsigned int pdindex = VM_VITRADDR_TO_PDINDEX(virtaddr);
     unsigned int ptindex = VM_VITRADDR_TO_PTINDEX(virtaddr);
-    kprintf("pdindex: 0x%8h; ptindex: 0x%8h\n", pdindex, ptindex);
 
     unsigned int pdentry = (unsigned int)kpage_directory[pdindex];
     if ((pdentry & 0x00000001) == 0) {

@@ -18,6 +18,12 @@ static inline unsigned int inl(unsigned short port) {
     return ret;
 }
 
+static inline unsigned short inw(unsigned short port) {
+    unsigned short ret;
+    asm volatile("inw %1, %0" : "=a"(ret) : "Nd"(port));
+    return ret;
+}
+
 static inline void io_wait(void) {
     outb(0x80, 0);
 }
