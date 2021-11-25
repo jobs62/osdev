@@ -1,8 +1,8 @@
 AS=nasm
-CC=i386-elf-gcc
-LD=i386-elf-ld
+CC=gcc
+LD=ld
 
-C_SRC= kernel.c gdt.c interrupt.c tss.c pci.c
+C_SRC= kernel.c gdt.c interrupt.c tss.c pci.c ata.c fat.c
 ASM_SRC= kernel.asm interrupt.asm
 
 CFLAGS= -m32 -O2 -g
