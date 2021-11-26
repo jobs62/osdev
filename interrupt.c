@@ -1,4 +1,5 @@
 #include "io.h"
+#include "interrupt.h"
 
 struct cpu_state {
     unsigned int edi;
@@ -78,9 +79,20 @@ extern void interrupt_handler_39(void);
 extern void interrupt_handler_40(void);
 extern void interrupt_handler_41(void);
 extern void interrupt_handler_42(void);
+extern void interrupt_handler_42(void);
+extern void interrupt_handler_43(void);
+extern void interrupt_handler_44(void);
+extern void interrupt_handler_45(void);
+extern void interrupt_handler_46(void);
+extern void interrupt_handler_47(void);
 
-extern void interrupt_handler_80(void);
+struct inter_holder {
+    unsigned char present;
+    interrupt_type fnc;
+    void *ext;
+};
 
+struct inter_holder int_reg[48];
 extern void kprintf(const char *format, ...);
 
 void PIC_sendEOI(unsigned char irq);
@@ -106,14 +118,13 @@ void interrupt_handler(struct cpu_state cpu, unsigned int interrupt, struct stac
         return;
     }
 
-    
+    if (interrupt < 48 && int_reg[interrupt].present == 1) {
+        int_reg[interrupt].fnc(interrupt, int_reg[interrupt].ext);
+    } else {
         kprintf("CS=0x%8h, int_no=%d, err_code=0x%8h\n", stack.cs, interrupt, stack.error_code);
         kprintf("EDI=0x%8h, ESI=0x%8h, EBP=0x%8h\n", cpu.edi, cpu.esi, cpu.ebp);
         kprintf("ESP=0x%8h, EBX=0x%8h, EDX=0x%8h\n", cpu.esp, cpu.ebx, cpu.edx);
         kprintf("ECX=0x%8h, EAX=0x%8h, EIP=0x%8h\n", cpu.ecx, cpu.eax, stack.eip);
-
-    if (interrupt == 0x21) {
-        kprintf("scancode: 0x%8h\n", inb(0x60));
     }
 
     PIC_sendEOI(interrupt);
@@ -131,6 +142,8 @@ void idt_set_gate(unsigned char num, unsigned int base, unsigned short sel, unsi
 #define PIC2_START_INTERRUPT 0x28
 
 void setup_idt() {
+    memset(int_reg, 0, sizeof(int_reg));
+
     idt_set_gate(0, (unsigned int)&interrupt_handler_0, 0x08, 0x8E);     
     idt_set_gate(1, (unsigned int)&interrupt_handler_1, 0x08, 0x8E);     
     idt_set_gate(2, (unsigned int)&interrupt_handler_2, 0x08, 0x8E);     
@@ -174,9 +187,11 @@ void setup_idt() {
     idt_set_gate(40, (unsigned int)&interrupt_handler_40, 0x08, 0x8E);
     idt_set_gate(41, (unsigned int)&interrupt_handler_41, 0x08, 0x8E);
     idt_set_gate(42, (unsigned int)&interrupt_handler_42, 0x08, 0x8E);
-
-    idt_set_gate(80, (unsigned int)interrupt_handler_80, 0x08, 0x8E | 0x60);
-
+    idt_set_gate(43, (unsigned int)&interrupt_handler_43, 0x08, 0x8E);
+    idt_set_gate(44, (unsigned int)&interrupt_handler_44, 0x08, 0x8E);
+    idt_set_gate(45, (unsigned int)&interrupt_handler_45, 0x08, 0x8E);
+    idt_set_gate(46, (unsigned int)&interrupt_handler_46, 0x08, 0x8E);
+    idt_set_gate(47, (unsigned int)&interrupt_handler_47, 0x08, 0x8E);
 
     idt_base.base = (unsigned int)&idt_entries;
     idt_base.limit = sizeof(struct idt_entry) * IDT_TABLE_SZ - 1;
@@ -185,11 +200,9 @@ void setup_idt() {
 
     asm volatile("lidt %0" : : "m" (idt_base));
 
-    outb(PIC1_DATA, 0b11111000); //mask all interupt execept keyboard
-    outb(PIC2_DATA, 0b11111111);
+    outb(PIC1_DATA, 0x00); //mask all interupt execept keyboard
+    outb(PIC2_DATA, 0x00);
 }
-
-
 
 void PIC_sendEOI(unsigned char irq) {
     if (irq < PIC1_START_INTERRUPT || irq > PIC2_START_INTERRUPT + 7) {
@@ -244,3 +257,8 @@ void PIC_remap(int offset1, int offset2) {
 
 }
 
+void register_interrupt(unsigned int intno, interrupt_type fnc, void *ext) {
+    int_reg[intno].fnc = fnc;
+    int_reg[intno].ext = ext;
+    int_reg[intno].present = 1;
+}

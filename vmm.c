@@ -13,9 +13,7 @@
 #define VM_VITRADDR_TO_PDINDEX(virtaddr) ((uint32_t)(virtaddr) >> VM_PDINDEX_SHIFT)
 #define VM_VITRADDR_TO_PTINDEX(virtaddr) ((uint32_t)(virtaddr) >> VM_PTINDEX_SHIFT & 0x03FF)
 #define VM_INDEXES_TO_PTR(pdindex, ptindex) (void *)(((pdindex) << VM_PDINDEX_SHIFT) | ((ptindex) << VM_PTINDEX_SHIFT))
-#define VM_PAGE_PRESENT 0x1
-#define VM_PAGE_READ_WRITE 0x2
-#define VM_PAGE_USER_ACCESS 0x4
+
 
 extern void PAGE_DIRECTORY(void);
 extern void PAGE_TABLE(void);
@@ -27,6 +25,7 @@ static void free_kbrk(void *min, void *max);
 physaddr_t get_physaddr(virtaddr_t virtaddr) {
     unsigned int pdindex = VM_VITRADDR_TO_PDINDEX(virtaddr);
     unsigned int ptindex = VM_VITRADDR_TO_PTINDEX(virtaddr);
+    kprintf("pd: 0x%8h; pt: 0x%8h\n", pdindex, ptindex);
 
     unsigned int pdentry = (unsigned int)kpage_directory[pdindex];
     if ((pdentry & 0x00000001) == 0) {
@@ -37,6 +36,7 @@ physaddr_t get_physaddr(virtaddr_t virtaddr) {
     //So i guess i have to map every pt to a specific virtual location to be able to find them
     unsigned int *pt = VM_PDINDEX_TO_PTR(pdindex);
     unsigned int ptentry = pt[ptindex];
+    kprintf("pt: 0x%8h; ptentry: 0x%8h\n", pt, ptentry);
     if ((ptentry & 0x00000001) == 0) {
         kprintf("pte not present\n");
         return (0);
@@ -55,8 +55,6 @@ void map_page(physaddr_t physadd, virtaddr_t virtaddr, unsigned int flags) {
     unsigned int *pt = VM_PDINDEX_TO_PTR(pdindex);
 
     if ((pdentry & 0x00000001) == 0) {
-        kprintf("pt not present (0x%8h)\n", pt);
-        
         //alloc page
         physaddr_t pagetable_physmap = bitmap_find_free_page();
         kprintf("pa: 0x%8h\n", pagetable_physmap);
@@ -126,10 +124,11 @@ void vmm_init() {
     vmm_base[VM_VITRADDR_TO_PDINDEX(VM_PT_MOUNT_BASE)] = (pagetable_physmap & ~FIRST_12BITS_MASK) | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT;
     vmm_base = VM_PT_MOUNT_BASE;
 
+    //clean up the booststrap
     flush_tlb_single(pagetable_physmap);
     ((unsigned int *)&PAGE_TABLE)[PAGE_LEN - 1] = (pagetable_physmap & ~FIRST_12BITS_MASK) | VM_PAGE_READ_WRITE;
 
-    vmm_base[VM_VITRADDR_TO_PDINDEX(VM_PT_MOUNT_BASE) * PAGE_LEN + VM_VITRADDR_TO_PDINDEX(KERNAL_MAP_BASE)] = ((unsigned int)(&PAGE_TABLE) & ~FIRST_12BITS_MASK) | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT;
+    vmm_base[VM_VITRADDR_TO_PDINDEX(VM_PT_MOUNT_BASE) * PAGE_LEN + VM_VITRADDR_TO_PDINDEX(KERNAL_MAP_BASE)] = ((unsigned int)(&PAGE_TABLE - KERNAL_MAP_BASE) & ~FIRST_12BITS_MASK) | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT;
 }
 
 void *get_kbrk() {

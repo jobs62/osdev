@@ -114,6 +114,8 @@ void kmain(unsigned long magic, unsigned long addr) {
     bitmap_mark_as_used(0); //damn BUUUGGG
     asm volatile("sti");
 
+    vmm_init();
+
     pci_scan_bus(0);
 
     struct fat_directory_iterator fat_dir;
@@ -135,9 +137,9 @@ void kmain(unsigned long magic, unsigned long addr) {
         }
     }
 
-    vmm_init();
 
-    prepare_switch_to_usermode();
+
+    //prepare_switch_to_usermode();
 }
 
 #define HEX_BASE 16

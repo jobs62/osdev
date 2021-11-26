@@ -3,12 +3,21 @@
 #include "ata.h"
 #include "io.h"
 #include "fat.h"
+#include "vmm.h"
+#include "pmm.h"
+#include "interrupt.h"
+
+struct pdr {
+	uint32_t base_address;
+	uint32_t other_stuff;
+} __attribute__((packed));
 
 struct IDEChannelRegisters {
 	unsigned short base;  // I/O Base.
 	unsigned short ctrl;  // Control Base
-	unsigned short bmide; // Bus Master IDE
+	void *bmide; // Bus Master IDE
 	unsigned char nIEN;   // nIEN (No Interrupt);
+	struct pdr pdrt[1];
 } channels[2];
 
 struct ide_device {
@@ -22,6 +31,7 @@ struct ide_device {
 	unsigned int Size;	     // Size in Sectors.
 	unsigned char Model[41];     // Model in string.
 } ide_devices[4];
+
 
 static unsigned char ide_read(unsigned char channel, unsigned char reg);
 static void ide_write(unsigned char channel, unsigned char reg, unsigned char data);
@@ -92,6 +102,10 @@ static uint8_t ide_ata_access(uint8_t direction, uint8_t drive, uint32_t lba, ui
 #define ATA_REG_ALTSTATUS 0x0C
 #define ATA_REG_DEVADDRESS 0x0D
 
+#define ATA_BMR_COMMAND 0x00
+#define ATA_BMR_STATUS 0x02
+#define ATA_BMR_PRDT 0x04
+
 #define ATA_IDENT_DEVICETYPE 0
 #define ATA_IDENT_CYLINDERS 2
 #define ATA_IDENT_HEADS 6
@@ -110,6 +124,10 @@ unsigned static char atapi_packet[12] = {0xA8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
 extern void sleep(unsigned int t);
 
+unsigned int irq_signaling_flag = 0;
+void irq_signaling(unsigned int irq, void *ext) {
+	irq_signaling_flag = 1;
+}
 
 void ata_init(struct pci_header *head) {
 	uint32_t bar0, bar1, bar2, bar3, bar4;
@@ -132,7 +150,12 @@ void ata_init(struct pci_header *head) {
 		bar3 = head->specific.type0.bar3;
 	}
 
-	bar4 = head->specific.type0.bar4; // probably 0
+	if (head->prog_if & 0x80) { // Bus mastering avilable
+		bar4 = GET_BEGINGIN_PREV_PAGE(get_kbrk());
+		map_page(head->specific.type0.bar4 & 0xFFFFFFFC, bar4, VM_PAGE_READ_WRITE);
+	} else {
+		bar4 = 0;
+	}
 
 	// 1- Detect I/O Ports which interface IDE Controller:
 	channels[ATA_PRIMARY].base = bar0 & 0xFFFFFFFC;
@@ -141,6 +164,19 @@ void ata_init(struct pci_header *head) {
 	channels[ATA_SECONDARY].ctrl = bar3 & 0xFFFFFFFC;
 	channels[ATA_PRIMARY].bmide = (bar4 & 0xFFFFFFFC) + 0;   // Bus Master IDE
 	channels[ATA_SECONDARY].bmide = (bar4 & 0xFFFFFFFC) + 8; // Bus Master IDE
+
+	if (head->prog_if & 0x80) {
+		channels[ATA_PRIMARY].pdrt[0].base_address = bitmap_find_free_page();
+		channels[ATA_PRIMARY].pdrt[0].other_stuff = (4096 << 8) | 0x1;
+		channels[ATA_SECONDARY].pdrt[0].base_address = bitmap_find_free_page();
+		channels[ATA_SECONDARY].pdrt[0].other_stuff = (4096 << 8) | 0x1;
+
+		outl(channels[ATA_PRIMARY].bmide + ATA_BMR_PRDT, get_physaddr(channels[ATA_PRIMARY].pdrt));
+		outl(channels[ATA_SECONDARY].bmide + ATA_BMR_PRDT, get_physaddr(channels[ATA_SECONDARY].pdrt));
+
+		kprintf("irq line: 0x%2h\n", head->specific.type0.interrupt_line);
+		//register_interrupt(head->specific.type0.interrupt_line, irq_signaling, (void *)0);
+	}
 
 	// 2- Disable IRQs:
 	ide_write(ATA_PRIMARY, ATA_REG_CONTROL, 2);
@@ -336,10 +372,15 @@ static uint8_t ide_ata_access(uint8_t direction, uint8_t drive, uint32_t lba, ui
 	}
 
    	// (II) See if drive supports DMA or not;
-   	dma = 0; // We don't support DMA
-
+   	dma = 1;
+	
    // (III) Wait if the drive is busy;
    while (ide_read(channel, ATA_REG_STATUS) & ATA_SR_BSY) {}
+
+	if (dma) {
+		outb(channels[channel].bmide + ATA_BMR_COMMAND, 0x0);
+		outl(channels[channel].bmide + ATA_BMR_PRDT, get_physaddr(channels[channel].pdrt));
+	}
 
     // (IV) Select Drive from the controller;
    if (lba_mode == 0) {
@@ -372,12 +413,22 @@ static uint8_t ide_ata_access(uint8_t direction, uint8_t drive, uint32_t lba, ui
    	if (lba_mode == 0 && dma == 1 && direction == 1) cmd = ATA_CMD_WRITE_DMA;
    	if (lba_mode == 1 && dma == 1 && direction == 1) cmd = ATA_CMD_WRITE_DMA;
    	if (lba_mode == 2 && dma == 1 && direction == 1) cmd = ATA_CMD_WRITE_DMA_EXT;
-	ide_write(channel, ATA_REG_COMMAND, cmd);
 	
 	if (dma == 1) {
-		//No DMA support for now
+		if (direction == ATA_READ) {
+			ide_write(channel, ATA_REG_COMMAND, cmd);
+			outb(channels[channel].bmide + ATA_BMR_COMMAND, 0x8 | 0x01);
+			//Some irq pooling
+			while(1) {
+				kprintf("status: 0x%2h\n", !(inb(channels[channel].bmide + ATA_BMR_STATUS) & 0x4));
+				sleep(500);
+			}
+
+			kprintf("khfzjkfhzejf\n");
+		}
 	} else {
 		if (direction == ATA_READ) {
+			ide_write(channel, ATA_REG_COMMAND, cmd);
 			//Read
 			for (i = 0; i < numsects; i++) {
 				if ((err = ide_polling(channel, 1)) != 0) {
@@ -453,3 +504,4 @@ uint8_t ide_read_sectors(uint8_t drive, uint8_t numsects, uint32_t lba, void *ed
 
 	return 4;
 }
+

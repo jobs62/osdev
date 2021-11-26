@@ -76,5 +76,8 @@ no_error_code_interrupt_handler 39
 no_error_code_interrupt_handler 40
 no_error_code_interrupt_handler 41
 no_error_code_interrupt_handler 42
-
-no_error_code_interrupt_handler 80
+no_error_code_interrupt_handler 43
+no_error_code_interrupt_handler 44
+no_error_code_interrupt_handler 45
+no_error_code_interrupt_handler 46
+no_error_code_interrupt_handler 47
