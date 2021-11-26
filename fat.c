@@ -56,48 +56,26 @@ struct fat_bpb {
 	} extended;
 } __attribute__((packed));
 
-struct fat_directory_entry {
-	uint8_t DIR_Name[11];
-	uint8_t DIR_Attr;
-	uint8_t DIR_NTRes;
-	uint8_t DIR_CrtTimeTenth;
-	uint16_t DIR_CrtTime;
-	uint16_t DIR_CrtDate;
-	uint16_t DIR_LstAccDate;
-	uint16_t DIR_FstClusHI;
-	uint16_t DIR_WrtTime;
-	uint16_t DIR_WrtDate;
-	uint16_t DIR_FstClusLO;
-	uint32_t DIR_FileSize;
-};
 
-struct {
-	uint8_t fat_type;
-	struct fat_bpb bpb;
-}
 
-#define FAT_TYPE_12 1
-#define FAT_TYPE_16 2
-#define FAT_TYPE_32 3
-#define FAT_TYPE_NONE 0
+struct fat_fs fs;
 
 void fat_init(uint8_t drive) {
 	struct fat_bpb bpb;
-	uint8_t fat_type;
+	fs.fat_type = FAT_TYPE_NONE;
 
 	if (ide_read_sectors(drive, 1, 0, &bpb) != 0) {
 		kprintf("ide_read_sectore error\n");
 		return;
 	}
 
-	uint32_t RootDirSectors = ((bpb.common.BPB_RootEntCnt * 32) + (bpb.common.BPB_BytsPerSec - 1)) / bpb.common.BPB_BytsPerSec;
-	uint32_t FATz;
+	fs.fat_root_dir_size = ((bpb.common.BPB_RootEntCnt * 32) + (bpb.common.BPB_BytsPerSec - 1)) / bpb.common.BPB_BytsPerSec;
 	uint32_t TotSec;
 
 	if (bpb.common.BPB_FATz16 != 0) {
-		FATz = bpb.common.BPB_FATz16;
+		fs.fat_fat_size = bpb.common.BPB_FATz16;
 	} else {
-		FATz = bpb.extended.fat32.BPB_FATz32;
+		fs.fat_fat_size = bpb.extended.fat32.BPB_FATz32;
 	}
 
 	if (bpb.common.BPB_TotSec16 != 0) {
@@ -106,55 +84,63 @@ void fat_init(uint8_t drive) {
 		TotSec = bpb.common.BPB_TotSec32;
 	}
 
-	uint32_t DataSec = TotSec - (bpb.common.BPB_RsvdSecCnt + (bpb.common.BPB_NumFATs * FATz) + RootDirSectors);
+	fs.fat_first_sector_fat = bpb.common.BPB_RsvdSecCnt;
+	fs.fat_first_sector_data = (fs.fat_first_sector_fat + (bpb.common.BPB_NumFATs * fs.fat_fat_size) + fs.fat_root_dir_size);
+	uint32_t DataSec = TotSec - fs.fat_first_sector_data;
 	uint32_t CountofClusters = DataSec / bpb.common.BPB_SecPerClus;
+	fs.fat_data_size = DataSec * bpb.common.BPB_BytsPerSec;
+	fs.fat_cluster_size = bpb.common.BPB_SecPerClus;
 
 	if (CountofClusters < 4085) {
-		fat_type = FAT_TYPE_12;
-		kprintf("Fat12 not supported\n");
-		return;
+		fs.fat_type = FAT_TYPE_12;
 	} else if (CountofClusters < 65525) {
-		fat_type = FAT_TYPE_16;
+		fs.fat_type  = FAT_TYPE_16;
 	} else {
-		fat_type = FAT_TYPE_32;
+		fs.fat_type  = FAT_TYPE_32;
 	}
 
 	if (bpb.common.BS_jmpBoot[0] != 0xeb) {
 		kprintf("jmp boot fail\n");
-		return;
+		fs.fat_type = FAT_TYPE_NONE;
 	} 
 
-	if (fat_type == FAT_TYPE_12 || fat_type == FAT_TYPE_16) {
+	if (fs.fat_type  == FAT_TYPE_12 || fs.fat_type  == FAT_TYPE_16) {
 		//Check for FAT12/16
 		if (bpb.extended.fat16.Signature_word != 0xAA55) {
 			kprintf("sig fail\n");
-			return;
+			fs.fat_type = FAT_TYPE_NONE;
 		}
 
 		if (bpb.common.BPB_RootEntCnt * 32 % bpb.common.BPB_BytsPerSec != 0) {
 			kprintf("BPB_RootEntCnt fail\n");
-			return;
+			fs.fat_type = FAT_TYPE_NONE;
 		}
 	} else {
 		//Check for FAT32
 		if (bpb.extended.fat32.Signature_word != 0xAA55) {
 			kprintf("sig fail\n");
-			return;
+			fs.fat_type = FAT_TYPE_NONE;
 		}
 
-		if (RootDirSectors != 0) {
+		if (fs.fat_root_dir_size != 0) {
 			kprintf("root_dir_sectors fail\n");
-			return;
+			fs.fat_type = FAT_TYPE_NONE;
 		}
 
 		if (bpb.common.BPB_RootEntCnt != 0) {
 			kprintf("BPB_RootEntCnt fail\n");
-			return;
+			fs.fat_type = FAT_TYPE_NONE;
 		}
 	}
-	//until here it's fine
 
-	switch (fat_type) {
+	switch (fs.fat_type) {
+		case FAT_TYPE_NONE:
+			kprintf("Invalid FAT partition\n");
+			return;
+		case FAT_TYPE_12:
+			kprintf("FAT12 Not supported\n");
+			fs.fat_type = FAT_TYPE_NONE;
+			return;
 		case FAT_TYPE_16:
 			kprintf("FAT16\n");
 			break;
@@ -163,48 +149,180 @@ void fat_init(uint8_t drive) {
 			break;
 	}
 
-	uint32_t FirstRotDirSecNum = bpb.common.BPB_RsvdSecCnt + (bpb.common.BPB_NumFATs * bpb.common.BPB_FATz16);
-	struct fat_directory_entry fat_root_dir[16];
-
-	kprintf("FirstRotDirSecNum: 0x%8h; BPB_RootEntCnt: 0x%8h\n", FirstRotDirSecNum, bpb.common.BPB_RootEntCnt);
-
-	if (ide_read_sectors(drive, 1, FirstRotDirSecNum, fat_root_dir) != 0) {
-		kprintf("ide_read_sectore error\n");
-		return;
-	}
-
-	char buffer[512];
-	for (int i = 0; i < 16; i++) {
-		if (fat_root_dir[i].DIR_Name[0] == '\0') {
-			kprintf("last entry\n");
+	switch(fs.fat_type) {
+		case FAT_TYPE_12:
+		case FAT_TYPE_16:
+			fs.fat_root_dir_sector = bpb.common.BPB_RsvdSecCnt + (bpb.common.BPB_NumFATs * bpb.common.BPB_FATz16);
+			fs.fat_root_dir_size = bpb.common.BPB_RootEntCnt * 32;
 			break;
-		}
-
-		if (fat_root_dir[i].DIR_Name[0] == 0xE5) {
-			continue; //free space; skip
-		}
-
-		if (fat_root_dir[i].DIR_Attr == (0x01 | 0x02 | 0x04 | 0x08)) {
-			kprintf("long name\n");
-			continue;
-		}
- 
-		buffer[11] = '\0';
-		memcpy(buffer, fat_root_dir[i].DIR_Name, 11);
-		kprintf("dir_entry: name: %s\n", buffer);
-
-		uint32_t data_cluster = (fat_root_dir[i].DIR_FstClusHI << 16) | fat_root_dir[i].DIR_FstClusLO;
-		uint32_t first_data_sector = bpb.common.BPB_RsvdSecCnt + (bpb.common.BPB_NumFATs * FATz) + RootDirSectors;
-		uint32_t sector = ((data_cluster - 2) * bpb.common.BPB_SecPerClus) + first_data_sector;
-
-		kprintf("sector: 0x%8h\n", sector);
-		if (ide_read_sectors(drive, 1, sector, buffer) != 0) {
-			kprintf("ide_read_sectore error\n");
-			return;
-		}
-
-		buffer[fat_root_dir[i].DIR_FileSize] = '\0';
-
-		kprintf("file content: %s\n", buffer);
+		case FAT_TYPE_32:
+			fs.fat_root_dir_sector = fs.fat_first_sector_data + bpb.extended.fat32.BPB_RootClus * bpb.common.BPB_SecPerClus;
+			fs.fat_root_dir_size = 0; //Size of root dir in illimited, and is only limited by FAT EoF
+			break;
 	}
+}
+
+uint32_t fat_sector_iterator_root_dir(struct fat_sector_itearator *iter, struct fat_fs *fat) {
+	iter->fat = fat;
+	iter->current_sector = iter->fat->fat_root_dir_sector;
+	iter->eoi = 0;
+
+	switch(fat->fat_type) {
+		case FAT_TYPE_12:
+		case FAT_TYPE_16:
+			iter->reminding_size = iter->fat->fat_root_dir_size;
+			iter->current_cluster = 0;
+			break;
+		case FAT_TYPE_32:
+			iter->reminding_size = 0;
+			iter->current_cluster = (iter->fat->fat_root_dir_sector - iter->fat->fat_first_sector_data) / iter->fat->fat_cluster_size;
+			break;
+	}
+
+	return (0);
+}
+
+void fat_sector_itearator(struct fat_sector_itearator *iter, struct fat_directory_entry *dir, struct fat_fs *fat) {
+	iter->fat = fat;
+	iter->eoi = 0;
+	iter->current_cluster = (dir->DIR_FstClusHI << 16) | dir->DIR_FstClusLO - 2;
+	iter->current_sector = iter->fat->fat_first_sector_data + iter->current_cluster * iter->fat->fat_cluster_size;
+	iter->reminding_size = dir->DIR_FileSize;
+}
+
+uint32_t fat_sector_iterator_next(struct fat_sector_itearator *iter) {
+	uint8_t buffer[512];
+
+	uint32_t sector = iter->current_sector;
+	if (iter->eoi == 1) {
+		return (0); //i need to find a better idea to deal with errors
+	}
+
+	iter->current_sector++;
+	if (iter->reminding_size > 0) {
+		if (iter->reminding_size > 512) {
+			iter->reminding_size -= 512;
+		} else {
+			iter->reminding_size = 0;
+			iter->eoi = 1;
+		}
+	}
+
+	if (iter->current_cluster != 0 && (iter->current_sector - iter->fat->fat_first_sector_data) % iter->fat->fat_cluster_size == 0) {
+		uint32_t fatoffset = iter->current_cluster * 4;
+		uint32_t ThisFATSecNum, ThisFATSecOffset;
+
+		switch(iter->fat->fat_type) {
+			case FAT_TYPE_16:
+				fatoffset = iter->current_cluster * 2;
+			case FAT_TYPE_32:
+				ThisFATSecNum = iter->fat->fat_first_sector_fat + fatoffset / 512;
+				ThisFATSecOffset = fatoffset % 512;
+				break;
+			case FAT_TYPE_12:
+				fatoffset = iter->current_cluster + (iter->current_cluster / 2);
+				ThisFATSecNum = iter->fat->fat_first_sector_fat + fatoffset / 512;
+				ThisFATSecOffset = fatoffset % 512;
+				break;
+		}
+
+		ide_read_sectors(iter->fat->device, 1, ThisFATSecNum, buffer); //TODO: deal with Errors
+
+		uint32_t fat12ClusEntryVal;
+		switch (iter->fat->fat_type) {
+			case FAT_TYPE_16:
+				iter->current_cluster = *((uint16_t *)&buffer[ThisFATSecOffset]);
+				break;
+			case FAT_TYPE_32:
+				iter->current_cluster = (*((uint32_t *)&buffer[ThisFATSecOffset])) & 0x0FFFFFFF;
+				break;
+			case FAT_TYPE_12:
+				fat12ClusEntryVal = *((uint16_t *)&buffer[ThisFATSecOffset]);
+				if (iter->current_cluster & 0x0001) {
+					fat12ClusEntryVal = fat12ClusEntryVal >> 4;
+				} else {
+					fat12ClusEntryVal = fat12ClusEntryVal & 0x0FFF;
+				}
+				iter->current_cluster = fat12ClusEntryVal;
+				break;
+		}
+
+		if (iter->fat->fat_type == FAT_TYPE_12 && iter->current_cluster >= 0xff7) {
+			iter->current_cluster = 0;
+			iter->eoi = 1;
+		}
+
+		if (iter->fat->fat_type == FAT_TYPE_16 && iter->current_cluster >= 0xfff7) {
+			iter->current_cluster = 0;
+			iter->eoi = 1;
+		}
+
+		if (iter->fat->fat_type == FAT_TYPE_16 && iter->current_cluster >= 0xfffffff7) {
+			iter->current_cluster = 0;
+			iter->eoi = 1;
+		}
+
+		if (iter->current_cluster != 0) {
+			iter->current_sector = iter->fat->fat_first_sector_data + (iter->current_cluster - 2) * iter->fat->fat_cluster_size;
+		}
+	}
+
+	return sector;
+}
+
+void fat_directory_iterator_root_dir(struct fat_directory_iterator *iter, struct fat_fs *fat) {
+	uint32_t sec;
+	
+	fat_sector_iterator_root_dir(&iter->sec_iter, fat);
+	iter->i = 0;
+
+	sec = fat_sector_iterator_next(&iter->sec_iter);
+	if (sec == 0) {
+		iter->eoi = 1;
+	} else {
+		ide_read_sectors(iter->sec_iter.fat->device, 1, sec, iter->direntry); //Todo: manage errors
+		iter->eoi = 0;
+	}	
+}
+
+struct fat_directory_entry *fat_directory_iterator_next(struct fat_directory_iterator *iter) {
+	uint32_t sec;
+	struct fat_directory_entry *fat_directory_entry;
+
+fetch_next_one:
+	fat_directory_entry = &iter->direntry[iter->i];
+
+	if (iter->eoi == 0) {
+		iter->i++;
+	} else {
+		return (void *)0;
+	}
+
+	if (iter->i >= 16) {
+		memcpy(&iter->tmp, fat_directory_entry, 32);
+		fat_directory_entry = &iter->tmp;
+		sec = fat_sector_iterator_next(&iter->sec_iter);
+		if (sec == 0) {
+			/* EoI */
+			iter->eoi = 1;
+		} else {
+			ide_read_sectors(iter->sec_iter.fat->device, 1, sec, iter->direntry);
+			iter->i = 0;
+		}
+	}
+
+	if (fat_directory_entry->DIR_Name[0] == '\0') {
+		iter->eoi = 1;
+		return (void *)0;
+	}
+
+	if (fat_directory_entry->DIR_Name[0] == 0xE5) {
+		goto fetch_next_one;
+	}
+	
+	if ((fat_directory_entry->DIR_Attr & (0x01 | 0x02 | 0x04 | 0x08)) != 0) {
+		goto fetch_next_one;
+	}
+	
+	return fat_directory_entry;
 }

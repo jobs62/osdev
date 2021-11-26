@@ -1,6 +1,8 @@
+#include "ata.h"
 #include "multiboot.h"
 #include "io.h"
 #include "stdtype.h"
+#include "fat.h"
 
 #define ROW 25
 #define COL 80
@@ -64,6 +66,8 @@ extern void pci_scan_bus(uint8_t bus);
 
 #define CHECK_FLAG(flags,bit)   ((flags) & (1 << (bit)))
 
+extern struct fat_fs fs;
+
 void kmain(unsigned long magic, unsigned long addr) {
     memset(vidptr, 0, ROW * COL * 2);
     memset(bitmap, 0, sizeof(bitmap));
@@ -120,7 +124,6 @@ void kmain(unsigned long magic, unsigned long addr) {
     //lets walk the initial page table for finding physical page in use
     for (unsigned int i = 0; i < PAGE_LEN; i++) {
         if ((kpage_table_init[i] & 0b00000001) != 0) {
-            kprintf("addrpgy: 0x%8h\n", kpage_table_init[i] & ~FIRST_12BITS_MASK);
             bitmap_mark_as_used(kpage_table_init[i] & ~FIRST_12BITS_MASK);
         }
     }
@@ -128,6 +131,25 @@ void kmain(unsigned long magic, unsigned long addr) {
     asm volatile("sti");
 
     pci_scan_bus(0);
+
+    struct fat_directory_iterator fat_dir;
+    struct fat_sector_itearator fat_sec;
+    struct fat_directory_entry *sec;
+    uint32_t sector;
+    uint8_t buffer[513];
+    fat_directory_iterator_root_dir(&fat_dir, &fs);
+    while((sec = fat_directory_iterator_next(&fat_dir)) != 0) {
+        buffer[11] = '\0';
+		memcpy(buffer, sec->DIR_Name, 11);
+		kprintf("dir_entry: name: %s (%d)\n", buffer, sec->DIR_FileSize);
+
+        fat_sector_itearator(&fat_sec, sec, &fs);
+        while((sector = fat_sector_iterator_next(&fat_sec)) != 0) {
+            buffer[512] = '\0';
+            ide_read_sectors(fs.device, 1, sector, buffer);
+            kprintf("%s", buffer);
+        }
+    }
 
     vmm_init();
 
