@@ -114,6 +114,8 @@ extern void sleep(unsigned int t);
 void ata_init(struct pci_header *head) {
 	uint32_t bar0, bar1, bar2, bar3, bar4;
 
+	kprintf("prog_if: 0x%4h; status: 0x%4h; bar4: 0x%8h\n", head->prog_if, head->status, head->specific.type0.bar4);
+
 	if ((head->prog_if & 1) == 0) {
 		bar0 = 0x1F0;
 		bar1 = 0x3F6;

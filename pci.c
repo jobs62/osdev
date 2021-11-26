@@ -14,13 +14,13 @@
 extern void kprintf(const char *format, ...);
 
 struct pci_driver {
-	uint16_t vendor_id;
-	uint16_t device_id;
+	uint8_t class;
+	uint8_t subclass;
 	driver_init init;
 };
 
 struct pci_driver pci_drivers[] = {
-    {0x8086, 0x7010, ata_init},
+    {0x01, 0x01, ata_init},
 };
 
 uint32_t pci_drivers_sz = sizeof(pci_drivers) / sizeof(struct pci_driver);
@@ -30,7 +30,6 @@ static void pci_config_read_header(struct pci_header *head, uint8_t bus, uint8_t
 static void pci_scan_device(uint8_t bus, uint8_t device);
 static void pci_print_header(struct pci_header *head);
 static void pci_init_device(struct pci_header *head);
-
 
 static uint32_t pci_config_read(uint8_t bus, uint8_t slot, uint8_t fonc, uint8_t offset) {
 	uint32_t address = PCI_BSFO_TO_ADDRESS(bus, slot, fonc, offset) | 0x80000000;
@@ -88,7 +87,7 @@ static void pci_print_header(struct pci_header *head) {
 
 static void pci_init_device(struct pci_header *head) {
 	for (uint32_t i = 0; i < pci_drivers_sz; i++) {
-		if (head->vendor_id == pci_drivers[i].vendor_id && head->device_id == pci_drivers[i].device_id) {
+		if (head->class == pci_drivers[i].class && head->subclass == pci_drivers[i].subclass) {
 			pci_drivers[i].init(head);
 		}
 	}
