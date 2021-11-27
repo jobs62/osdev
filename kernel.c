@@ -128,6 +128,10 @@ void kmain(unsigned long magic, unsigned long addr) {
         buffer[11] = '\0';
 		memcpy(buffer, sec->DIR_Name, 11);
 		kprintf("dir_entry: name: %s (%d)\n", buffer, sec->DIR_FileSize);
+        if (sec->DIR_Attr & 0x10) {
+            continue;
+        }
+
 
         fat_sector_itearator(&fat_sec, sec, &fs);
         while((sector = fat_sector_iterator_next(&fat_sec)) != 0) {

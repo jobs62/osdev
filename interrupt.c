@@ -121,7 +121,7 @@ void interrupt_handler(struct cpu_state cpu, unsigned int interrupt, struct stac
     if (interrupt < 48 && int_reg[interrupt].present == 1) {
         int_reg[interrupt].fnc(interrupt, int_reg[interrupt].ext);
     } else {
-        kprintf("CS=0x%8h, int_no=%d, err_code=0x%8h\n", stack.cs, interrupt, stack.error_code);
+        kprintf("CS=0x%8h, int_no=0x%8h, err_code=0x%8h\n", stack.cs, interrupt, stack.error_code);
         kprintf("EDI=0x%8h, ESI=0x%8h, EBP=0x%8h\n", cpu.edi, cpu.esi, cpu.ebp);
         kprintf("ESP=0x%8h, EBX=0x%8h, EDX=0x%8h\n", cpu.esp, cpu.ebx, cpu.edx);
         kprintf("ECX=0x%8h, EAX=0x%8h, EIP=0x%8h\n", cpu.ecx, cpu.eax, stack.eip);

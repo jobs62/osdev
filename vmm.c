@@ -25,7 +25,7 @@ static void free_kbrk(void *min, void *max);
 physaddr_t get_physaddr(virtaddr_t virtaddr) {
     unsigned int pdindex = VM_VITRADDR_TO_PDINDEX(virtaddr);
     unsigned int ptindex = VM_VITRADDR_TO_PTINDEX(virtaddr);
-    kprintf("pd: 0x%8h; pt: 0x%8h\n", pdindex, ptindex);
+    //kprintf("pd: 0x%8h; pt: 0x%8h\n", pdindex, ptindex);
 
     unsigned int pdentry = (unsigned int)kpage_directory[pdindex];
     if ((pdentry & 0x00000001) == 0) {
@@ -36,7 +36,7 @@ physaddr_t get_physaddr(virtaddr_t virtaddr) {
     //So i guess i have to map every pt to a specific virtual location to be able to find them
     unsigned int *pt = VM_PDINDEX_TO_PTR(pdindex);
     unsigned int ptentry = pt[ptindex];
-    kprintf("pt: 0x%8h; ptentry: 0x%8h\n", pt, ptentry);
+    //kprintf("pt: 0x%8h; ptentry: 0x%8h\n", pt, ptentry);
     if ((ptentry & 0x00000001) == 0) {
         kprintf("pte not present\n");
         return (0);

@@ -9,15 +9,16 @@
 
 struct pdr {
 	uint32_t base_address;
-	uint32_t other_stuff;
+	uint16_t size;
+	uint32_t endmark;
 } __attribute__((packed));
 
 struct IDEChannelRegisters {
+	struct pdr pdrt[1];
 	unsigned short base;  // I/O Base.
 	unsigned short ctrl;  // Control Base
-	void *bmide; // Bus Master IDE
+	unsigned short bmide; // Bus Master IDE
 	unsigned char nIEN;   // nIEN (No Interrupt);
-	struct pdr pdrt[1];
 } channels[2];
 
 struct ide_device {
@@ -102,9 +103,9 @@ static uint8_t ide_ata_access(uint8_t direction, uint8_t drive, uint32_t lba, ui
 #define ATA_REG_ALTSTATUS 0x0C
 #define ATA_REG_DEVADDRESS 0x0D
 
-#define ATA_BMR_COMMAND 0x00
-#define ATA_BMR_STATUS 0x02
-#define ATA_BMR_PRDT 0x04
+#define ATA_BMR_COMMAND (0x00 + 0x0E)
+#define ATA_BMR_STATUS (0x02 + 0x0E)
+#define ATA_BMR_PRDT (0x04 + 0x0E)
 
 #define ATA_IDENT_DEVICETYPE 0
 #define ATA_IDENT_CYLINDERS 2
@@ -124,10 +125,7 @@ unsigned static char atapi_packet[12] = {0xA8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
 extern void sleep(unsigned int t);
 
-unsigned int irq_signaling_flag = 0;
-void irq_signaling(unsigned int irq, void *ext) {
-	irq_signaling_flag = 1;
-}
+void ide_int(unsigned int intno, void *ext);
 
 void ata_init(struct pci_header *head) {
 	uint32_t bar0, bar1, bar2, bar3, bar4;
@@ -150,12 +148,7 @@ void ata_init(struct pci_header *head) {
 		bar3 = head->specific.type0.bar3;
 	}
 
-	if (head->prog_if & 0x80) { // Bus mastering avilable
-		bar4 = GET_BEGINGIN_PREV_PAGE(get_kbrk());
-		map_page(head->specific.type0.bar4 & 0xFFFFFFFC, bar4, VM_PAGE_READ_WRITE);
-	} else {
-		bar4 = 0;
-	}
+	bar4 = head->specific.type0.bar4;
 
 	// 1- Detect I/O Ports which interface IDE Controller:
 	channels[ATA_PRIMARY].base = bar0 & 0xFFFFFFFC;
@@ -166,21 +159,17 @@ void ata_init(struct pci_header *head) {
 	channels[ATA_SECONDARY].bmide = (bar4 & 0xFFFFFFFC) + 8; // Bus Master IDE
 
 	if (head->prog_if & 0x80) {
-		channels[ATA_PRIMARY].pdrt[0].base_address = bitmap_find_free_page();
-		channels[ATA_PRIMARY].pdrt[0].other_stuff = (4096 << 8) | 0x1;
-		channels[ATA_SECONDARY].pdrt[0].base_address = bitmap_find_free_page();
-		channels[ATA_SECONDARY].pdrt[0].other_stuff = (4096 << 8) | 0x1;
-
-		outl(channels[ATA_PRIMARY].bmide + ATA_BMR_PRDT, get_physaddr(channels[ATA_PRIMARY].pdrt));
-		outl(channels[ATA_SECONDARY].bmide + ATA_BMR_PRDT, get_physaddr(channels[ATA_SECONDARY].pdrt));
-
-		kprintf("irq line: 0x%2h\n", head->specific.type0.interrupt_line);
-		//register_interrupt(head->specific.type0.interrupt_line, irq_signaling, (void *)0);
+		ide_write(ATA_PRIMARY, ATA_BMR_COMMAND, 0x0);
+		ide_write(ATA_PRIMARY, ATA_BMR_STATUS, 0x6);
+		kprintf("primary status: 0x%2h\n", ide_read(ATA_PRIMARY, ATA_BMR_STATUS));
+		kprintf("secondary status: 0x%2h\n", ide_read(ATA_PRIMARY, ATA_BMR_STATUS));
 	}
 
 	// 2- Disable IRQs:
-	ide_write(ATA_PRIMARY, ATA_REG_CONTROL, 2);
-	ide_write(ATA_SECONDARY, ATA_REG_CONTROL, 2);
+	//ide_write(ATA_PRIMARY, ATA_REG_CONTROL, 2);
+	//ide_write(ATA_SECONDARY, ATA_REG_CONTROL, 2);
+	register_interrupt(0x2e, ide_int, 0);
+	register_interrupt(0x2f, ide_int, 0);
 
 	// 3- Detect ATA-ATAPI Devices:
 	int count = 0;
@@ -263,7 +252,7 @@ void ata_init(struct pci_header *head) {
 	// 4- Print Summary:
 	for (int i = 0; i < 4; i++)
 		if (ide_devices[i].Reserved == 1) {
-			kprintf(" Found %s Drive %dGB - %s\n", (const char *[]){"ATA", "ATAPI"}[ide_devices[i].Type],
+			kprintf(" Found %s Drive %1dGB - %s\n", (const char *[]){"ATA", "ATAPI"}[ide_devices[i].Type],
 				  ide_devices[i].Size / 1024 / 1024 / 2, ide_devices[i].Model);
 
 			if (ide_devices[i].Type == 0) {
@@ -372,14 +361,25 @@ static uint8_t ide_ata_access(uint8_t direction, uint8_t drive, uint32_t lba, ui
 	}
 
    	// (II) See if drive supports DMA or not;
-   	dma = 1;
+   	dma = 0; //by default use PIO
+	if (channels[channel].bmide != channel * 8 && (get_physaddr(edi) & 0x1) == 0)  {
+		dma = 1; //enable dma if edi is sutable
+		// i guess i could also alloc and memcpy, but were is the fun ?
+	}
 	
    // (III) Wait if the drive is busy;
    while (ide_read(channel, ATA_REG_STATUS) & ATA_SR_BSY) {}
 
+	// If DMA is enable, prepare pdrt and bus master register
 	if (dma) {
-		outb(channels[channel].bmide + ATA_BMR_COMMAND, 0x0);
-		outl(channels[channel].bmide + ATA_BMR_PRDT, get_physaddr(channels[channel].pdrt));
+		channels[channel].pdrt[0].base_address = get_physaddr(edi) & ~0x1;
+		channels[channel].pdrt[0].size = (512 * numsects) & 0xfffd;
+		channels[channel].pdrt[0].endmark = 0x8000;
+
+		outl(channels[channel].bmide + ATA_BMR_PRDT - 0x0E, get_physaddr(channels[channel].pdrt));
+
+		ide_write(channel, ATA_BMR_COMMAND, 0x0);
+		ide_write(channel, ATA_BMR_STATUS, 0x6);
 	}
 
     // (IV) Select Drive from the controller;
@@ -416,15 +416,13 @@ static uint8_t ide_ata_access(uint8_t direction, uint8_t drive, uint32_t lba, ui
 	
 	if (dma == 1) {
 		if (direction == ATA_READ) {
+			ide_irq_invoked = 0;
 			ide_write(channel, ATA_REG_COMMAND, cmd);
-			outb(channels[channel].bmide + ATA_BMR_COMMAND, 0x8 | 0x01);
-			//Some irq pooling
-			while(1) {
-				kprintf("status: 0x%2h\n", !(inb(channels[channel].bmide + ATA_BMR_STATUS) & 0x4));
-				sleep(500);
-			}
+			ide_write(channel, ATA_BMR_COMMAND, 0x1);
 
-			kprintf("khfzjkfhzejf\n");
+			while (ide_irq_invoked == 0) {
+				asm volatile("hlt"); //halt cpu until next interrupt
+			}
 		}
 	} else {
 		if (direction == ATA_READ) {
@@ -505,3 +503,14 @@ uint8_t ide_read_sectors(uint8_t drive, uint8_t numsects, uint32_t lba, void *ed
 	return 4;
 }
 
+void ide_int(unsigned int intno, void *ext) {
+	ide_irq_invoked = 1;
+
+	if (intno == 0x2e) {
+		//kprintf("primary ide master bus status: 0x%2h;\n", ide_read(ATA_PRIMARY, ATA_BMR_STATUS));
+		ide_write(ATA_PRIMARY, ATA_BMR_STATUS, 0x4);
+	} else {
+		//kprintf("secodary ide master bus status: 0x%2h;\n", ide_read(ATA_SECONDARY, ATA_BMR_STATUS));
+		ide_write(ATA_SECONDARY, ATA_BMR_STATUS, 0x4);
+	}
+}

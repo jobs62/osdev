@@ -69,6 +69,10 @@ void fat_init(uint8_t drive) {
 		return;
 	}
 
+	if (bpb.common.BPB_BytsPerSec == 0) {
+		goto involid_fat_header;
+	}
+
 	fs.fat_root_dir_size = ((bpb.common.BPB_RootEntCnt * 32) + (bpb.common.BPB_BytsPerSec - 1)) / bpb.common.BPB_BytsPerSec;
 	uint32_t TotSec;
 
@@ -135,6 +139,7 @@ void fat_init(uint8_t drive) {
 
 	switch (fs.fat_type) {
 		case FAT_TYPE_NONE:
+involid_fat_header:
 			kprintf("Invalid FAT partition\n");
 			return;
 		case FAT_TYPE_12:
