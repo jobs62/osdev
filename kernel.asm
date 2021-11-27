@@ -125,7 +125,7 @@ switch_to_user_mode:
 	push .1
 	iret
 .1:
-	nop
+	;hlt
 	jmp .1
 
 section .bss

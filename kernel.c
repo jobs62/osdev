@@ -141,9 +141,7 @@ void kmain(unsigned long magic, unsigned long addr) {
         }
     }
 
-
-
-    //prepare_switch_to_usermode();
+    prepare_switch_to_usermode();
 }
 
 #define HEX_BASE 16
@@ -342,6 +340,6 @@ extern unsigned int tick;
 void sleep(unsigned int t) {
     tick = t / 55 + 1;
     while(tick != 0) {
-        asm volatile("nop");
+        asm volatile("hlt");
     }
 }
