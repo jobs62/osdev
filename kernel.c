@@ -5,6 +5,7 @@
 #include "fat.h"
 #include "vmm.h"
 #include "pmm.h"
+#include "stdlib.h"
 
 #define ROW 25
 #define COL 80
@@ -129,15 +130,21 @@ void kmain(unsigned long magic, unsigned long addr) {
 		memcpy(buffer, sec->DIR_Name, 11);
 		kprintf("dir_entry: name: %s (%d)\n", buffer, sec->DIR_FileSize);
         if (sec->DIR_Attr & 0x10) {
-            continue;
-        }
+            struct fat_directory_iterator dir_dir;
 
-
-        fat_sector_itearator(&fat_sec, sec, &fs);
-        while((sector = fat_sector_iterator_next(&fat_sec)) != 0) {
-            buffer[512] = '\0';
-            ide_read_sectors(fs.device, 1, sector, buffer);
-            kprintf("%s", buffer);
+            fat_directory_iterator(&dir_dir, sec, &fs);
+            while((sec = fat_directory_iterator_next(&dir_dir)) != 0) {
+                buffer[11] = '\0';
+                memcpy(buffer, sec->DIR_Name, 11);
+                kprintf("dir_entry: name: %s (%d)\n", buffer, sec->DIR_FileSize);
+            }
+        } else {
+            fat_sector_itearator(&fat_sec, sec, &fs);
+            while((sector = fat_sector_iterator_next(&fat_sec)) != 0) {
+                buffer[512] = '\0';
+                ide_read_sectors(fs.device, 1, sector, buffer);
+                kprintf("%s", buffer);
+            }
         }
     }
 
@@ -262,27 +269,6 @@ int put(char c) {
 
     return (0);
 }
-
-
-void *memcpy(void *dst, const void *src, unsigned long size) {
-    char *dp = (char *)dst;
-    const char *sp = (const char *)src;
-    while (size--) {
-        *dp++ = *sp++;
-    }
-    return (dst);
-}
-
-
-void *memset(void* dst, int c, unsigned long size) {
-    unsigned char *p = (unsigned char *)dst;
-    while (size--) {
-        *p++ = (unsigned char)c;
-    }
-    return (dst);
-}
-
-
 
 extern void update_kernel_stack(void *stack);
 

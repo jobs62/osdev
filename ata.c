@@ -19,6 +19,7 @@ struct IDEChannelRegisters {
 	unsigned short ctrl;  // Control Base
 	unsigned short bmide; // Bus Master IDE
 	unsigned char nIEN;   // nIEN (No Interrupt);
+	unsigned char dma_capable;
 } channels[2];
 
 struct ide_device {
@@ -157,13 +158,8 @@ void ata_init(struct pci_header *head) {
 	channels[ATA_SECONDARY].ctrl = bar3 & 0xFFFFFFFC;
 	channels[ATA_PRIMARY].bmide = (bar4 & 0xFFFFFFFC) + 0;   // Bus Master IDE
 	channels[ATA_SECONDARY].bmide = (bar4 & 0xFFFFFFFC) + 8; // Bus Master IDE
-
-	if (head->prog_if & 0x80) {
-		ide_write(ATA_PRIMARY, ATA_BMR_COMMAND, 0x0);
-		ide_write(ATA_PRIMARY, ATA_BMR_STATUS, 0x6);
-		kprintf("primary status: 0x%2h\n", ide_read(ATA_PRIMARY, ATA_BMR_STATUS));
-		kprintf("secondary status: 0x%2h\n", ide_read(ATA_PRIMARY, ATA_BMR_STATUS));
-	}
+	channels[ATA_PRIMARY].dma_capable = (head->prog_if & 0x80);
+	channels[ATA_SECONDARY].dma_capable = (head->prog_if & 0x80);
 
 	// 2- Disable IRQs:
 	//ide_write(ATA_PRIMARY, ATA_REG_CONTROL, 2);
@@ -254,6 +250,7 @@ void ata_init(struct pci_header *head) {
 		if (ide_devices[i].Reserved == 1) {
 			kprintf(" Found %s Drive %1dGB - %s\n", (const char *[]){"ATA", "ATAPI"}[ide_devices[i].Type],
 				  ide_devices[i].Size / 1024 / 1024 / 2, ide_devices[i].Model);
+			kprintf("  Capabilites: 0x%4h; CommandSet: 0x%8h\n", ide_devices[i].Capabilities, ide_devices[i].CommandSets);
 
 			if (ide_devices[i].Type == 0) {
 				fat_init(i);
@@ -362,9 +359,10 @@ static uint8_t ide_ata_access(uint8_t direction, uint8_t drive, uint32_t lba, ui
 
    	// (II) See if drive supports DMA or not;
    	dma = 0; //by default use PIO
-	if (channels[channel].bmide != channel * 8 && (get_physaddr(edi) & 0x1) == 0)  {
+	if (channels[channel].dma_capable != 0 && (get_physaddr(edi) & 0x1) == 0)  {
 		dma = 1; //enable dma if edi is sutable
 		// i guess i could also alloc and memcpy, but were is the fun ?
+		//TODO check 64k crossing bondaries
 	}
 	
    // (III) Wait if the drive is busy;
@@ -373,7 +371,7 @@ static uint8_t ide_ata_access(uint8_t direction, uint8_t drive, uint32_t lba, ui
 	// If DMA is enable, prepare pdrt and bus master register
 	if (dma) {
 		channels[channel].pdrt[0].base_address = get_physaddr(edi) & ~0x1;
-		channels[channel].pdrt[0].size = (512 * numsects) & 0xfffd;
+		channels[channel].pdrt[0].size = (512 * numsects) & 0xfffd; //TODO hcek 64k limit
 		channels[channel].pdrt[0].endmark = 0x8000;
 
 		outl(channels[channel].bmide + ATA_BMR_PRDT - 0x0E, get_physaddr(channels[channel].pdrt));
@@ -420,8 +418,8 @@ static uint8_t ide_ata_access(uint8_t direction, uint8_t drive, uint32_t lba, ui
 			ide_write(channel, ATA_REG_COMMAND, cmd);
 			ide_write(channel, ATA_BMR_COMMAND, 0x1);
 
-			while (ide_irq_invoked == 0) {
-				asm volatile("hlt"); //halt cpu until next interrupt
+			if ((err = ide_polling(channel, 1)) != 0) {
+					return err;
 			}
 		}
 	} else {
@@ -429,7 +427,7 @@ static uint8_t ide_ata_access(uint8_t direction, uint8_t drive, uint32_t lba, ui
 			ide_write(channel, ATA_REG_COMMAND, cmd);
 			//Read
 			for (i = 0; i < numsects; i++) {
-				if ((err = ide_polling(channel, 1)) != 0) {
+				if ((err = ide_polling(channel, 2)) != 0) {
 					return err;
 				}
 				
@@ -447,16 +445,11 @@ static uint8_t ide_ata_access(uint8_t direction, uint8_t drive, uint32_t lba, ui
 }
 
 static uint8_t ide_polling(uint8_t channel, uint8_t advanced_check) {
-	// (I) Delay 400 nanosecond for BSY to be set:
-   	// -------------------------------------------------
-   	for(int i = 0; i < 4; i++) {
-      	ide_read(channel, ATA_REG_ALTSTATUS); // Reading the Alternate Status port wastes 100ns; loop four times.
+	ide_irq_invoked = 0;
+	while (ide_irq_invoked == 0) {
+		asm volatile("hlt");
 	}
 
-   	// (II) Wait for BSY to be cleared:
-   	// -------------------------------------------------
-   	while (ide_read(channel, ATA_REG_STATUS) & ATA_SR_BSY) {}
- 
    	if (advanced_check) {
     	unsigned char state = ide_read(channel, ATA_REG_STATUS); // Read Status Register.
  
@@ -471,15 +464,14 @@ static uint8_t ide_polling(uint8_t channel, uint8_t advanced_check) {
       	if (state & ATA_SR_DF) {
         	return 1; // Device Fault.
 		}
- 
-      	// (V) Check DRQ:
-      	// -------------------------------------------------
-      	// BSY = 0; DF = 0; ERR = 0 so we should check for DRQ now.
-      	if ((state & ATA_SR_DRQ) == 0) {
-        	return 3; // DRQ should be set
+
+		// (V) Check DRQ:
+		// -------------------------------------------------
+		// BSY = 0; DF = 0; ERR = 0 so we should check for DRQ now.
+		if ((advanced_check & 0x2) && (state & ATA_SR_DRQ) == 0) {
+			return 3; // DRQ should be set
 		}
- 
-   	}
+	}
  
    return 0; // No Error.
 }

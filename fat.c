@@ -1,6 +1,7 @@
 #include "stdtype.h"
 #include "ata.h"
 #include "fat.h"
+#include "stdlib.h"
 
 struct fat_bpb_common {
 	uint8_t BS_jmpBoot[3];
@@ -190,8 +191,8 @@ uint32_t fat_sector_iterator_root_dir(struct fat_sector_itearator *iter, struct 
 void fat_sector_itearator(struct fat_sector_itearator *iter, struct fat_directory_entry *dir, struct fat_fs *fat) {
 	iter->fat = fat;
 	iter->eoi = 0;
-	iter->current_cluster = (dir->DIR_FstClusHI << 16) | dir->DIR_FstClusLO - 2;
-	iter->current_sector = iter->fat->fat_first_sector_data + iter->current_cluster * iter->fat->fat_cluster_size;
+	iter->current_cluster = (dir->DIR_FstClusHI << 16) | dir->DIR_FstClusLO;
+	iter->current_sector = iter->fat->fat_first_sector_data + (iter->current_cluster-2) * iter->fat->fat_cluster_size;
 	iter->reminding_size = dir->DIR_FileSize;
 }
 
@@ -288,6 +289,27 @@ void fat_directory_iterator_root_dir(struct fat_directory_iterator *iter, struct
 		ide_read_sectors(iter->sec_iter.fat->device, 1, sec, iter->direntry); //Todo: manage errors
 		iter->eoi = 0;
 	}	
+}
+
+void fat_directory_iterator(struct fat_directory_iterator *iter, struct fat_directory_entry *dir, struct fat_fs *fat) {
+	uint32_t sec;
+	
+	if ((dir->DIR_Attr & 0x10) == 0) {
+		//dir entry not a directory, wtf;
+		iter->eoi = 1;
+		return;
+	}
+
+	fat_sector_itearator(&iter->sec_iter, dir, fat);
+	iter->i = 0;
+
+	sec = fat_sector_iterator_next(&iter->sec_iter);
+	if (sec == 0) {
+		iter->eoi = 1;
+	} else {
+		ide_read_sectors(iter->sec_iter.fat->device, 1, sec, iter->direntry); //Todo: manage errors
+		iter->eoi = 0;
+	}
 }
 
 struct fat_directory_entry *fat_directory_iterator_next(struct fat_directory_iterator *iter) {
