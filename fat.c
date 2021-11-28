@@ -162,7 +162,7 @@ involid_fat_header:
 			fs.fat_root_dir_size = bpb.common.BPB_RootEntCnt * 32;
 			break;
 		case FAT_TYPE_32:
-			fs.fat_root_dir_sector = fs.fat_first_sector_data + bpb.extended.fat32.BPB_RootClus * bpb.common.BPB_SecPerClus;
+			fs.fat_root_dir_sector = fs.fat_first_sector_data + (bpb.extended.fat32.BPB_RootClus-2) * bpb.common.BPB_SecPerClus;
 			fs.fat_root_dir_size = 0; //Size of root dir in illimited, and is only limited by FAT EoF
 			break;
 	}

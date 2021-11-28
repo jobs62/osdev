@@ -143,7 +143,7 @@ void kmain(unsigned long magic, unsigned long addr) {
             while((sector = fat_sector_iterator_next(&fat_sec)) != 0) {
                 buffer[512] = '\0';
                 ide_read_sectors(fs.device, 1, sector, buffer);
-                kprintf("%s", buffer);
+                //kprintf("%s", buffer);
             }
         }
     }
