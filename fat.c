@@ -64,13 +64,15 @@ struct fat_fs fs;
 void fat_init(uint8_t drive) {
 	struct fat_bpb bpb;
 	fs.fat_type = FAT_TYPE_NONE;
+	uint8_t err;
 
-	if (ide_read_sectors(drive, 1, 0, &bpb) != 0) {
-		kprintf("ide_read_sectore error\n");
+	if ((err = ide_read_sectors(drive, 1, 0, &bpb)) != 0) {
+		kprintf("ide_read_sectore error (%d)\n", err);
 		return;
 	}
 
 	if (bpb.common.BPB_BytsPerSec == 0) {
+		kprintf("BPB_BytsPerSec errror\n");
 		goto involid_fat_header;
 	}
 

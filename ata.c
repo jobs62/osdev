@@ -19,8 +19,8 @@ struct IDEChannelRegisters {
 	unsigned short ctrl;  // Control Base
 	unsigned short bmide; // Bus Master IDE
 	unsigned char nIEN;   // nIEN (No Interrupt);
-	unsigned char dma_capable;
-} channels[2];
+	uint8_t bus, slot, fonc;
+} __attribute__((aligned(64))) channels[2];
 
 struct ide_device {
 	unsigned char Reserved;	     // 0 (Empty) or 1 (This Drive really exists).
@@ -32,6 +32,7 @@ struct ide_device {
 	unsigned int CommandSets;    // Command Sets Supported.
 	unsigned int Size;	     // Size in Sectors.
 	unsigned char Model[41];     // Model in string.
+	unsigned short udma;
 } ide_devices[4];
 
 
@@ -114,6 +115,8 @@ static uint8_t ide_ata_access(uint8_t direction, uint8_t drive, uint32_t lba, ui
 #define ATA_IDENT_SECTORS 12
 #define ATA_IDENT_SERIAL 20
 #define ATA_IDENT_MODEL 54
+#define ATA_IDENT_UDMA 88
+#define ATA_IDENT_CABLE 93
 #define ATA_IDENT_CAPABILITIES 98
 #define ATA_IDENT_FIELDVALID 106
 #define ATA_IDENT_MAX_LBA 120
@@ -128,7 +131,7 @@ extern void sleep(unsigned int t);
 
 void ide_int(unsigned int intno, void *ext);
 
-void ata_init(struct pci_header *head) {
+void ata_init(struct pci_header *head, uint8_t bus, uint8_t slot, uint8_t fonc) {
 	uint32_t bar0, bar1, bar2, bar3, bar4;
 
 	kprintf("prog_if: 0x%4h; status: 0x%4h; bar4: 0x%8h\n", head->prog_if, head->status, head->specific.type0.bar4);
@@ -158,8 +161,9 @@ void ata_init(struct pci_header *head) {
 	channels[ATA_SECONDARY].ctrl = bar3 & 0xFFFFFFFC;
 	channels[ATA_PRIMARY].bmide = (bar4 & 0xFFFFFFFC) + 0;   // Bus Master IDE
 	channels[ATA_SECONDARY].bmide = (bar4 & 0xFFFFFFFC) + 8; // Bus Master IDE
-	channels[ATA_PRIMARY].dma_capable = (head->prog_if & 0x80);
-	channels[ATA_SECONDARY].dma_capable = (head->prog_if & 0x80);
+	channels[ATA_PRIMARY].bus = channels[ATA_SECONDARY].bus = bus;
+	channels[ATA_PRIMARY].slot = channels[ATA_SECONDARY].slot = fonc;
+	channels[ATA_PRIMARY].fonc = channels[ATA_SECONDARY].fonc = fonc;
 
 	// 2- Disable IRQs:
 	//ide_write(ATA_PRIMARY, ATA_REG_CONTROL, 2);
@@ -224,6 +228,15 @@ void ata_init(struct pci_header *head) {
 			ide_devices[count].Signature = *((unsigned short *)(ide_buf + ATA_IDENT_DEVICETYPE));
 			ide_devices[count].Capabilities = *((unsigned short *)(ide_buf + ATA_IDENT_CAPABILITIES));
 			ide_devices[count].CommandSets = *((unsigned int *)(ide_buf + ATA_IDENT_COMMANDSETS));
+			ide_devices[count].udma = *((unsigned short *)(ide_buf + ATA_IDENT_UDMA));
+
+			kprintf("cable: 0x%4h\n", *((unsigned short *)(ide_buf + ATA_IDENT_CABLE)));
+			/*
+			 * ok, so the cable emulated by qemu seam to not be 80pins, wich should indicate that using udma > 2 is not a great idea
+			 * but udma 6 is enable on the drive so... maybe that why dma is acting wired ? but does is realy matter in a vm ?
+			 * i need to invastigate that crap...
+			 * for referance heree, cable 0x1020 and ubma: 0x2020
+			 */
 
 			// (VII) Get Size:
 			if (ide_devices[count].CommandSets & (1 << 26)) {
@@ -250,7 +263,7 @@ void ata_init(struct pci_header *head) {
 		if (ide_devices[i].Reserved == 1) {
 			kprintf(" Found %s Drive %1dGB - %s\n", (const char *[]){"ATA", "ATAPI"}[ide_devices[i].Type],
 				  ide_devices[i].Size / 1024 / 1024 / 2, ide_devices[i].Model);
-			kprintf("  Capabilites: 0x%4h; CommandSet: 0x%8h\n", ide_devices[i].Capabilities, ide_devices[i].CommandSets);
+			kprintf("  Capabilites: 0x%4h; CommandSet: 0x%8h; UDMA: 0x%4h\n", ide_devices[i].Capabilities, ide_devices[i].CommandSets, ide_devices[i].udma);
 
 			if (ide_devices[i].Type == 0) {
 				fat_init(i);
@@ -359,11 +372,11 @@ static uint8_t ide_ata_access(uint8_t direction, uint8_t drive, uint32_t lba, ui
 
    	// (II) See if drive supports DMA or not;
    	dma = 0; //by default use PIO
-	if (channels[channel].dma_capable != 0 && (get_physaddr(edi) & 0x1) == 0)  {
-		dma = 1; //enable dma if edi is sutable
-		// i guess i could also alloc and memcpy, but were is the fun ?
-		//TODO check 64k crossing bondaries
-	}
+	//if (channels[channel].bmide != channel * 8 && (get_physaddr(edi) % 4) == 0)  {
+	//	dma = 1; //enable dma if edi is sutable
+	//	// i guess i could also alloc and memcpy, but were is the fun ?
+	//	//TODO check 64k crossing bondaries
+	//}
 	
    // (III) Wait if the drive is busy;
    while (ide_read(channel, ATA_REG_STATUS) & ATA_SR_BSY) {}
@@ -374,6 +387,8 @@ static uint8_t ide_ata_access(uint8_t direction, uint8_t drive, uint32_t lba, ui
 		channels[channel].pdrt[0].size = (512 * numsects) & 0xfffd; //TODO hcek 64k limit
 		channels[channel].pdrt[0].endmark = 0x8000;
 
+		kprintf("pdrt addr: 0x%8h\n", get_physaddr(channels[channel].pdrt));
+		kprintf("pdrt[0] 0x%8h 0x%8h\n", ((uint32_t *)channels[channel].pdrt)[0], ((uint32_t *)channels[channel].pdrt)[1]);
 		outl(channels[channel].bmide + ATA_BMR_PRDT - 0x0E, get_physaddr(channels[channel].pdrt));
 
 		ide_write(channel, ATA_BMR_COMMAND, 0x0);
@@ -414,7 +429,6 @@ static uint8_t ide_ata_access(uint8_t direction, uint8_t drive, uint32_t lba, ui
 	
 	if (dma == 1) {
 		if (direction == ATA_READ) {
-			ide_irq_invoked = 0;
 			ide_write(channel, ATA_REG_COMMAND, cmd);
 			ide_write(channel, ATA_BMR_COMMAND, 0x1);
 
@@ -445,10 +459,12 @@ static uint8_t ide_ata_access(uint8_t direction, uint8_t drive, uint32_t lba, ui
 }
 
 static uint8_t ide_polling(uint8_t channel, uint8_t advanced_check) {
-	ide_irq_invoked = 0;
-	while (ide_irq_invoked == 0) {
+	static uint8_t old_ide_irq_invoked = 0;
+
+	while (ide_irq_invoked == old_ide_irq_invoked) {
 		asm volatile("hlt");
 	}
+	old_ide_irq_invoked = ide_irq_invoked;
 
    	if (advanced_check) {
     	unsigned char state = ide_read(channel, ATA_REG_STATUS); // Read Status Register.
@@ -496,10 +512,12 @@ uint8_t ide_read_sectors(uint8_t drive, uint8_t numsects, uint32_t lba, void *ed
 }
 
 void ide_int(unsigned int intno, void *ext) {
-	ide_irq_invoked = 1;
+	ide_irq_invoked++;
 
 	if (intno == 0x2e) {
-		//kprintf("primary ide master bus status: 0x%2h;\n", ide_read(ATA_PRIMARY, ATA_BMR_STATUS));
+		uint16_t pci_status = pci_config_read(channels[ATA_PRIMARY].bus, channels[ATA_PRIMARY].slot, channels[ATA_PRIMARY].fonc, 0x4) >> 16;
+		kprintf("primary ide master bus status: 0x%2h; pci status: 0x%4h\n", ide_read(ATA_PRIMARY, ATA_BMR_STATUS), pci_status);
+		kprintf("ide status: 0x%2h; ide error: 0x%2h\n", ide_read(ATA_PRIMARY, ATA_REG_STATUS), ide_read(ATA_PRIMARY, ATA_REG_ERROR));
 		ide_write(ATA_PRIMARY, ATA_BMR_STATUS, 0x4);
 	} else {
 		//kprintf("secodary ide master bus status: 0x%2h;\n", ide_read(ATA_SECONDARY, ATA_BMR_STATUS));

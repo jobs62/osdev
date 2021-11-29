@@ -25,13 +25,12 @@ struct pci_driver pci_drivers[] = {
 
 uint32_t pci_drivers_sz = sizeof(pci_drivers) / sizeof(struct pci_driver);
 
-static uint32_t pci_config_read(uint8_t bus, uint8_t slot, uint8_t fonc, uint8_t offset);
 static void pci_config_read_header(struct pci_header *head, uint8_t bus, uint8_t slot, uint8_t fonc);
 static void pci_scan_device(uint8_t bus, uint8_t device);
 static void pci_print_header(struct pci_header *head);
-static void pci_init_device(struct pci_header *head);
+static void pci_init_device(struct pci_header *head, uint8_t bus, uint8_t slot, uint8_t fonc);
 
-static uint32_t pci_config_read(uint8_t bus, uint8_t slot, uint8_t fonc, uint8_t offset) {
+uint32_t pci_config_read(uint8_t bus, uint8_t slot, uint8_t fonc, uint8_t offset) {
 	uint32_t address = PCI_BSFO_TO_ADDRESS(bus, slot, fonc, offset) | 0x80000000;
 
 	outl(PCI_CONFIG_ADDRESS, address);
@@ -66,7 +65,7 @@ static void pci_scan_device(uint8_t bus, uint8_t device) {
 	}
 
 	pci_print_header(&pci_header);
-	pci_init_device(&pci_header);
+	pci_init_device(&pci_header, bus, device, 0);
 
 	if ((pci_header.header_type & 0x80) != 0) {
 		for (uint8_t i = 1; i < 8; i++) {
@@ -75,7 +74,7 @@ static void pci_scan_device(uint8_t bus, uint8_t device) {
 				continue;
 			}
 			pci_print_header(&pci_header);
-			pci_init_device(&pci_header);
+			pci_init_device(&pci_header, bus, device, i);
 		}
 	}
 }
@@ -85,10 +84,10 @@ static void pci_print_header(struct pci_header *head) {
 		  head->device_id, head->class, head->subclass);
 }
 
-static void pci_init_device(struct pci_header *head) {
+static void pci_init_device(struct pci_header *head, uint8_t bus, uint8_t slot, uint8_t fonc) {
 	for (uint32_t i = 0; i < pci_drivers_sz; i++) {
 		if (head->class == pci_drivers[i].class && head->subclass == pci_drivers[i].subclass) {
-			pci_drivers[i].init(head);
+			pci_drivers[i].init(head, bus, slot, fonc);
 		}
 	}
 }

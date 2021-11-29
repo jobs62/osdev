@@ -38,8 +38,9 @@ struct pci_header {
 	} __attribute__((packed)) specific;
 } __attribute__((packed));
 
-typedef void (*driver_init)(struct pci_header *);
+typedef void (*driver_init)(struct pci_header *, uint8_t, uint8_t, uint8_t);
 
 void pci_scan_bus(uint8_t bus);
+uint32_t pci_config_read(uint8_t bus, uint8_t slot, uint8_t fonc, uint8_t offset);
 
 #endif
