@@ -183,7 +183,7 @@ uint32_t fat_sector_iterator_root_dir(struct fat_sector_itearator *iter, struct 
 			break;
 		case FAT_TYPE_32:
 			iter->reminding_size = 0;
-			iter->current_cluster = ((iter->fat->fat_root_dir_sector - iter->fat->fat_first_sector_data) / iter->fat->fat_cluster_size);
+			iter->current_cluster = ((iter->fat->fat_root_dir_sector - iter->fat->fat_first_sector_data) / iter->fat->fat_cluster_size) - 2;
 			break;
 	}
 

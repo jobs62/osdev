@@ -124,7 +124,7 @@ static uint8_t ide_ata_access(uint8_t direction, uint8_t drive, uint32_t lba, ui
 #define ATA_IDENT_MAX_LBA_EXT 200
 
 unsigned char ide_buf[2048] = {0};
-unsigned static char ide_irq_invoked = 0;
+unsigned volatile static char ide_irq_invoked = 0;
 unsigned static char atapi_packet[12] = {0xA8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
 extern void sleep(unsigned int t);
@@ -429,15 +429,17 @@ static uint8_t ide_ata_access(uint8_t direction, uint8_t drive, uint32_t lba, ui
 	
 	if (dma == 1) {
 		if (direction == ATA_READ) {
+			ide_irq_invoked = 0;
 			ide_write(channel, ATA_REG_COMMAND, cmd);
 			ide_write(channel, ATA_BMR_COMMAND, 0x1);
 
 			if ((err = ide_polling(channel, 1)) != 0) {
-					return err;
+				return err;
 			}
 		}
 	} else {
 		if (direction == ATA_READ) {
+			ide_irq_invoked = 0;
 			ide_write(channel, ATA_REG_COMMAND, cmd);
 			//Read
 			for (i = 0; i < numsects; i++) {
@@ -459,13 +461,9 @@ static uint8_t ide_ata_access(uint8_t direction, uint8_t drive, uint32_t lba, ui
 }
 
 static uint8_t ide_polling(uint8_t channel, uint8_t advanced_check) {
-	static uint8_t old_ide_irq_invoked = 0;
-
-	while (ide_irq_invoked == old_ide_irq_invoked) {
+	while (ide_irq_invoked == 0) {
 		asm volatile("hlt");
 	}
-	old_ide_irq_invoked = ide_irq_invoked;
-
    	if (advanced_check) {
     	unsigned char state = ide_read(channel, ATA_REG_STATUS); // Read Status Register.
  
@@ -515,7 +513,7 @@ void ide_int(unsigned int intno, void *ext) {
 	ide_irq_invoked++;
 
 	if (intno == 0x2e) {
-		///uint16_t pci_status = pci_config_read(channels[ATA_PRIMARY].bus, channels[ATA_PRIMARY].slot, channels[ATA_PRIMARY].fonc, 0x4) >> 16;
+		//uint16_t pci_status = pci_config_read(channels[ATA_PRIMARY].bus, channels[ATA_PRIMARY].slot, channels[ATA_PRIMARY].fonc, 0x4) >> 16;
 		//kprintf("primary ide master bus status: 0x%2h; pci status: 0x%4h\n", ide_read(ATA_PRIMARY, ATA_BMR_STATUS), pci_status);
 		//kprintf("ide status: 0x%2h; ide error: 0x%2h\n", ide_read(ATA_PRIMARY, ATA_REG_STATUS), ide_read(ATA_PRIMARY, ATA_REG_ERROR));
 		ide_write(ATA_PRIMARY, ATA_BMR_STATUS, 0x4);
