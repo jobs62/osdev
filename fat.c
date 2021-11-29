@@ -183,7 +183,7 @@ uint32_t fat_sector_iterator_root_dir(struct fat_sector_itearator *iter, struct 
 			break;
 		case FAT_TYPE_32:
 			iter->reminding_size = 0;
-			iter->current_cluster = ((iter->fat->fat_root_dir_sector - iter->fat->fat_first_sector_data) / iter->fat->fat_cluster_size) - 2;
+			iter->current_cluster = ((iter->fat->fat_root_dir_sector - iter->fat->fat_first_sector_data) / iter->fat->fat_cluster_size) + 2;
 			break;
 	}
 
@@ -259,17 +259,17 @@ uint32_t fat_sector_iterator_next(struct fat_sector_itearator *iter) {
 				break;
 		}
 
-		if (iter->fat->fat_type == FAT_TYPE_12 && iter->current_cluster >= 0xff7) {
+		if (iter->fat->fat_type == FAT_TYPE_12 && iter->current_cluster >= 0xFF7) {
 			iter->current_cluster = 0;
 			iter->eoi = 1;
 		}
 
-		if (iter->fat->fat_type == FAT_TYPE_16 && iter->current_cluster >= 0xfff7) {
+		if (iter->fat->fat_type == FAT_TYPE_16 && iter->current_cluster >= 0xFFF7) {
 			iter->current_cluster = 0;
 			iter->eoi = 1;
 		}
 
-		if (iter->fat->fat_type == FAT_TYPE_16 && iter->current_cluster >= 0xfffffff7) {
+		if (iter->fat->fat_type == FAT_TYPE_32 && iter->current_cluster >= 0x0FFFFFF7) {
 			iter->current_cluster = 0;
 			iter->eoi = 1;
 		}
@@ -277,8 +277,6 @@ uint32_t fat_sector_iterator_next(struct fat_sector_itearator *iter) {
 		if (iter->current_cluster != 0) {
 			iter->current_sector = iter->fat->fat_first_sector_data + (iter->current_cluster - 2) * iter->fat->fat_cluster_size;
 		}
-
-		//kprintf("new cluster: 0x%8h\n", iter->current_cluster);
 	}
 
 	return sector;
