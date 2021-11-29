@@ -164,7 +164,7 @@ involid_fat_header:
 			fs.fat_root_dir_size = bpb.common.BPB_RootEntCnt * 32;
 			break;
 		case FAT_TYPE_32:
-			fs.fat_root_dir_sector = fs.fat_first_sector_data + (bpb.extended.fat32.BPB_RootClus-2) * bpb.common.BPB_SecPerClus;
+			fs.fat_root_dir_sector = fs.fat_first_sector_data + (bpb.extended.fat32.BPB_RootClus - 2) * bpb.common.BPB_SecPerClus;
 			fs.fat_root_dir_size = 0; //Size of root dir in illimited, and is only limited by FAT EoF
 			break;
 	}
@@ -183,7 +183,7 @@ uint32_t fat_sector_iterator_root_dir(struct fat_sector_itearator *iter, struct 
 			break;
 		case FAT_TYPE_32:
 			iter->reminding_size = 0;
-			iter->current_cluster = (iter->fat->fat_root_dir_sector - iter->fat->fat_first_sector_data) / iter->fat->fat_cluster_size;
+			iter->current_cluster = ((iter->fat->fat_root_dir_sector - iter->fat->fat_first_sector_data) / iter->fat->fat_cluster_size);
 			break;
 	}
 
@@ -194,12 +194,13 @@ void fat_sector_itearator(struct fat_sector_itearator *iter, struct fat_director
 	iter->fat = fat;
 	iter->eoi = 0;
 	iter->current_cluster = (dir->DIR_FstClusHI << 16) | dir->DIR_FstClusLO;
-	iter->current_sector = iter->fat->fat_first_sector_data + (iter->current_cluster-2) * iter->fat->fat_cluster_size;
+	iter->current_sector = iter->fat->fat_first_sector_data + (iter->current_cluster - 2) * iter->fat->fat_cluster_size;
 	iter->reminding_size = dir->DIR_FileSize;
 }
 
 uint32_t fat_sector_iterator_next(struct fat_sector_itearator *iter) {
 	uint8_t buffer[512];
+	uint32_t err;
 
 	uint32_t sector = iter->current_sector;
 	if (iter->eoi == 1) {
@@ -234,7 +235,10 @@ uint32_t fat_sector_iterator_next(struct fat_sector_itearator *iter) {
 				break;
 		}
 
-		ide_read_sectors(iter->fat->device, 1, ThisFATSecNum, buffer); //TODO: deal with Errors
+		if ((err = ide_read_sectors(iter->fat->device, 1, ThisFATSecNum, buffer)) != 0) {
+			kprintf("ide_read_sectore error (%d)\n", err);
+			iter->eoi = 1;
+		}
 
 		uint32_t fat12ClusEntryVal;
 		switch (iter->fat->fat_type) {
@@ -280,17 +284,21 @@ uint32_t fat_sector_iterator_next(struct fat_sector_itearator *iter) {
 
 void fat_directory_iterator_root_dir(struct fat_directory_iterator *iter, struct fat_fs *fat) {
 	uint32_t sec;
-	
+	uint8_t err;
+
 	fat_sector_iterator_root_dir(&iter->sec_iter, fat);
 	iter->i = 0;
 
 	sec = fat_sector_iterator_next(&iter->sec_iter);
 	if (sec == 0) {
+		kprintf("fat_sector_iterator_next error\n");
+		iter->eoi = 1;
+	} else if ((err = ide_read_sectors(iter->sec_iter.fat->device, 1, sec, iter->direntry)) != 0) {
+		kprintf("fat_sector_iterator_next error (%d)\n", err);
 		iter->eoi = 1;
 	} else {
-		ide_read_sectors(iter->sec_iter.fat->device, 1, sec, iter->direntry); //Todo: manage errors
 		iter->eoi = 0;
-	}	
+	}
 }
 
 void fat_directory_iterator(struct fat_directory_iterator *iter, struct fat_directory_entry *dir, struct fat_fs *fat) {

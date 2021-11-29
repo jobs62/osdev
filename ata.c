@@ -472,20 +472,20 @@ static uint8_t ide_polling(uint8_t channel, uint8_t advanced_check) {
       	// (III) Check For Errors:
       	// -------------------------------------------------
       	if (state & ATA_SR_ERR) {
-        	return 2; // Error.
+        	return 12; // Error.
 		}
  
       	// (IV) Check If Device fault:
       	// -------------------------------------------------
       	if (state & ATA_SR_DF) {
-        	return 1; // Device Fault.
+        	return 11; // Device Fault.
 		}
 
 		// (V) Check DRQ:
 		// -------------------------------------------------
 		// BSY = 0; DF = 0; ERR = 0 so we should check for DRQ now.
 		if ((advanced_check & 0x2) && (state & ATA_SR_DRQ) == 0) {
-			return 3; // DRQ should be set
+			return 13; // DRQ should be set
 		}
 	}
  
@@ -515,9 +515,9 @@ void ide_int(unsigned int intno, void *ext) {
 	ide_irq_invoked++;
 
 	if (intno == 0x2e) {
-		uint16_t pci_status = pci_config_read(channels[ATA_PRIMARY].bus, channels[ATA_PRIMARY].slot, channels[ATA_PRIMARY].fonc, 0x4) >> 16;
-		kprintf("primary ide master bus status: 0x%2h; pci status: 0x%4h\n", ide_read(ATA_PRIMARY, ATA_BMR_STATUS), pci_status);
-		kprintf("ide status: 0x%2h; ide error: 0x%2h\n", ide_read(ATA_PRIMARY, ATA_REG_STATUS), ide_read(ATA_PRIMARY, ATA_REG_ERROR));
+		///uint16_t pci_status = pci_config_read(channels[ATA_PRIMARY].bus, channels[ATA_PRIMARY].slot, channels[ATA_PRIMARY].fonc, 0x4) >> 16;
+		//kprintf("primary ide master bus status: 0x%2h; pci status: 0x%4h\n", ide_read(ATA_PRIMARY, ATA_BMR_STATUS), pci_status);
+		//kprintf("ide status: 0x%2h; ide error: 0x%2h\n", ide_read(ATA_PRIMARY, ATA_REG_STATUS), ide_read(ATA_PRIMARY, ATA_REG_ERROR));
 		ide_write(ATA_PRIMARY, ATA_BMR_STATUS, 0x4);
 	} else {
 		//kprintf("secodary ide master bus status: 0x%2h;\n", ide_read(ATA_SECONDARY, ATA_BMR_STATUS));
