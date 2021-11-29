@@ -277,6 +277,8 @@ uint32_t fat_sector_iterator_next(struct fat_sector_itearator *iter) {
 		if (iter->current_cluster != 0) {
 			iter->current_sector = iter->fat->fat_first_sector_data + (iter->current_cluster - 2) * iter->fat->fat_cluster_size;
 		}
+
+		//kprintf("new cluster: 0x%8h\n", iter->current_cluster);
 	}
 
 	return sector;
@@ -325,6 +327,7 @@ void fat_directory_iterator(struct fat_directory_iterator *iter, struct fat_dire
 struct fat_directory_entry *fat_directory_iterator_next(struct fat_directory_iterator *iter) {
 	uint32_t sec;
 	struct fat_directory_entry *fat_directory_entry;
+	uint8_t err;
 
 fetch_next_one:
 	fat_directory_entry = &iter->direntry[iter->i];
@@ -342,8 +345,10 @@ fetch_next_one:
 		if (sec == 0) {
 			/* EoI */
 			iter->eoi = 1;
+		} else if ((err = ide_read_sectors(iter->sec_iter.fat->device, 1, sec, iter->direntry)) != 0) {
+			kprintf("error ide_read_sector (%d)\n", err);
+			iter->eoi = 1;
 		} else {
-			ide_read_sectors(iter->sec_iter.fat->device, 1, sec, iter->direntry);
 			iter->i = 0;
 		}
 	}
