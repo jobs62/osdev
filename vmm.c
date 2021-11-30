@@ -217,6 +217,31 @@ tail:
     return vm_map[index].base;
 }
 
+void rm_vm_entry(void *base) {
+    struct vm_entry *vm = (struct vm_entry *)bsearch_sf(base, vm_map, vm_map_size, sizeof(struct vm_entry), vm_entry_cmp, (void *)0);
+    uint32_t index = (vm_map - vm) / sizeof(struct vm_entry);
+
+    if (vm->base != base) {
+        return;
+    }
+
+    //for every page, check physical address and mark as free
+    for(virtaddr_t addr = vm->base; addr < vm->base + vm->size; addr += PAGE_SIZE) {
+        physaddr_t phys = get_physaddr(addr);
+        if (phys != 0) {
+            bitmap_find_free_page(phys);
+        }
+    }
+
+    //nuke it from orbit
+    if (vm->base == 0) {
+        vm->size = 0;
+    } else {
+        memcpy(&vm_map[index], &vm_map[index + 1], sizeof(struct vm_entry) * (1023 - index));
+        vm_map_size--;
+    }
+}
+
 static void page_fault_interrupt_handler(unsigned int interrupt, void *ext) {
     virtaddr_t faulty_address;
     struct vm_entry *vm;
@@ -270,3 +295,4 @@ void dump_vm_map() {
         kprintf("%5d: 0x%8h (%1d)\n", i, vm_map[i].base, vm_map[i].size);
     }
 }
+

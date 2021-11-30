@@ -157,6 +157,7 @@ void kmain(unsigned long magic, unsigned long addr) {
     int *maptest = (int *)add_vm_entry(0, PAGE_SIZE, VM_MAP_ANONYMOUS | VM_MAP_WRITE);
     maptest[0] = 8;
     kprintf("maptest: %1d (0x%8h)\n", maptest[0], maptest);
+    rm_vm_entry(maptest);
 
     prepare_switch_to_usermode();
 }
