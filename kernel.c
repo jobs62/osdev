@@ -287,11 +287,11 @@ extern void update_kernel_stack(void *stack);
 #define USER_STACk (virtaddr_t)0xbfffffff
 
 void prepare_switch_to_usermode() {
-    unsigned int *user_page_directory = add_vm_entry(0, PAGE_SIZE, VM_MAP_ANONYMOUS | VM_MAP_WRITE);
-    unsigned int *user_kernel_table_directory = add_vm_entry(0, PAGE_SIZE, VM_MAP_ANONYMOUS | VM_MAP_WRITE);
-    unsigned int *user_stack_table_directory = add_vm_entry(0, PAGE_SIZE, VM_MAP_ANONYMOUS | VM_MAP_WRITE);
-    unsigned int *user_stack_limit =  add_vm_entry(0, PAGE_SIZE, VM_MAP_ANONYMOUS | VM_MAP_USER | VM_MAP_WRITE) + PAGE_SIZE - 1;
-    unsigned int *kernel_stack_limit =  add_vm_entry(0, PAGE_SIZE, VM_MAP_ANONYMOUS | VM_MAP_WRITE) + PAGE_SIZE - 1;
+    unsigned int *user_page_directory = add_vm_entry(0, PAGE_SIZE, VM_MAP_ANONYMOUS | VM_MAP_WRITE | VM_MAP_KERNEL);
+    unsigned int *user_kernel_table_directory = add_vm_entry(0, PAGE_SIZE, VM_MAP_ANONYMOUS | VM_MAP_WRITE | VM_MAP_KERNEL);
+    unsigned int *user_stack_table_directory = add_vm_entry(0, PAGE_SIZE, VM_MAP_ANONYMOUS | VM_MAP_WRITE | VM_MAP_KERNEL);
+    unsigned int *user_stack_limit =  add_vm_entry(0, PAGE_SIZE, VM_MAP_ANONYMOUS | VM_MAP_USER | VM_MAP_WRITE | VM_MAP_USER ) + PAGE_SIZE - 1;
+    unsigned int *kernel_stack_limit =  add_vm_entry(0, PAGE_SIZE, VM_MAP_ANONYMOUS | VM_MAP_WRITE | VM_MAP_KERNEL) + PAGE_SIZE - 1;
 
     kprintf("user_page_directory: 0x%8h; user_stack_table_directory: 0x%8h; user_stack_limit: 0x%8h\n",
         user_page_directory, user_stack_table_directory, user_stack_limit);
@@ -325,10 +325,11 @@ void prepare_switch_to_usermode() {
 
     memset(user_stack_table_directory, 0, PAGE_SIZE);
     user_stack_table_directory[VM_VITRADDR_TO_PTINDEX(USER_STACk)] = (get_physaddr(user_stack_limit) & ~FIRST_12BITS_MASK) | VM_PAGE_USER_ACCESS | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT; //user stack, read-write, user access, present
+    *user_stack_limit = 0;
 
-    asm volatile("mov %0, %%cr3" : : "r"(get_physaddr(user_page_directory)));
+    //asm volatile("mov %0, %%cr3" : : "r"(get_physaddr(user_page_directory)));
 
-    switch_to_user_mode();
+    //switch_to_user_mode();
 }
 
 extern unsigned int tick;

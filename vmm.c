@@ -8,9 +8,8 @@
 #define FIRST_12BITS_MASK 0xFFF
 
 
-#define KERNAL_MAP_BASE 0xc0000000
-
-#define VM_PT_MOUNT_BASE (virtaddr_t)0xB0000000
+#define KERNAL_MAP_BASE 0xC0000000
+#define VM_PT_MOUNT_BASE (virtaddr_t)0xFFC00000
 #define VM_PDINDEX_TO_PTR(index) ((unsigned int *)((uint32_t)VM_PT_MOUNT_BASE | ((index) << VM_PTINDEX_SHIFT)))
 #define VM_VITRADDR_TO_PDINDEX(virtaddr) ((uint32_t)(virtaddr) >> VM_PDINDEX_SHIFT)
 #define VM_VITRADDR_TO_PTINDEX(virtaddr) (((uint32_t)(virtaddr) >> VM_PTINDEX_SHIFT) & 0x03FF)
@@ -52,7 +51,7 @@ physaddr_t get_physaddr(virtaddr_t virtaddr) {
 
     unsigned int pdentry = (unsigned int)kpage_directory[pdindex];
     if ((pdentry & 0x00000001) == 0) {
-        kprintf("pt not present\n");
+        //kprintf("pt not present\n");
         return (0);
     }
    
@@ -61,7 +60,7 @@ physaddr_t get_physaddr(virtaddr_t virtaddr) {
     unsigned int ptentry = pt[ptindex];
     //kprintf("pt: 0x%8h; ptentry: 0x%8h\n", pt, ptentry);
     if ((ptentry & 0x00000001) == 0) {
-        kprintf("pte not present\n");
+        //kprintf("pte not present\n");
         return (0);
     }
     //kprintf("pt: 0x%8h\n", pt);
@@ -90,7 +89,7 @@ int map_page(physaddr_t physadd, virtaddr_t virtaddr, unsigned int flags) {
 
         //map page
         map_page(pagetable_physmap, pt, VM_PAGE_READ_WRITE);
-        kpage_directory[pdindex] = (pagetable_physmap & ~FIRST_12BITS_MASK) | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT;
+        kpage_directory[pdindex] = (pagetable_physmap & ~FIRST_12BITS_MASK) | VM_PAGE_READ_WRITE | (flags & VM_PAGE_USER_ACCESS) | VM_PAGE_PRESENT; //if map if showed with user access flag set, page direcotry should also have it to allow user
         
         //init page
         memset(pt, 0, PAGE_SIZE);
@@ -163,6 +162,19 @@ void vmm_init() {
 }
 
 void *add_vm_entry(void *hint, uint32_t size, uint32_t flags) {
+    //check flags for idotique things
+    if ((flags & VM_MAP_USER) && (flags & VM_MAP_KERNEL)) {
+        return 0;
+    }
+
+    if ((flags & VM_MAP_SHARED) && (flags & VM_MAP_PRIVATE)) {
+        return 0;
+    }
+
+    if ((flags & VM_MAP_ANONYMOUS) && (flags & VM_MAP_FILE)) {
+        return 0;
+    }
+
     struct vm_entry *lower = (struct vm_entry *)bsearch_sf(hint, vm_map, vm_map_size, sizeof(struct vm_entry), vm_entry_cmp, (void *)0);
     uint32_t index = (vm_map - lower) / sizeof(struct vm_entry);
 
@@ -177,7 +189,7 @@ find_empty_spot:
     }
 
     if (vm_map[index].base + vm_map[index].size > hint) {
-        hint = vm_map[index].base + vm_map[index].size ;
+        hint = vm_map[index].base + vm_map[index].size;
     }
 
     if (vm_map[index + 1].base < hint + size) {
@@ -213,6 +225,8 @@ tail:
         memset(&vm_map[0], 0, sizeof(struct vm_entry));
         index += 1;
     }
+
+    dump_vm_map();
 
     return vm_map[index].base;
 }
