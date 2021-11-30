@@ -6,6 +6,7 @@
 #include "vmm.h"
 #include "pmm.h"
 #include "stdlib.h"
+#include "liballoc.h"
 
 #define ROW 25
 #define COL 80
@@ -154,10 +155,9 @@ void kmain(unsigned long magic, unsigned long addr) {
     */
 
     /* oh boy */
-    int *maptest = (int *)add_vm_entry(0, PAGE_SIZE, VM_MAP_ANONYMOUS | VM_MAP_WRITE);
-    maptest[0] = 8;
-    kprintf("maptest: %1d (0x%8h)\n", maptest[0], maptest);
-    rm_vm_entry(maptest);
+    int *maptest = (int *)malloc(sizeof(int) * 1000);
+    maptest[300] = 8;
+    free(maptest);
 
     prepare_switch_to_usermode();
 }
