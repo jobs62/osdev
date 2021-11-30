@@ -19,7 +19,7 @@ void *memset(void* dst, int c, unsigned long size) {
 }
 
 
-void *bsearch_s(const void *key, const void *base, uint32_t num, uint32_t size, cmp_func_ext_t cmp, void *ext) {
+void *bsearch_sf(const void *key, const void *base, uint32_t num, uint32_t size, cmp_func_ext_t cmp, void *ext) {
     uint32_t l = 0;
     uint32_t r = num - 1;
     uint32_t m;
@@ -38,5 +38,5 @@ void *bsearch_s(const void *key, const void *base, uint32_t num, uint32_t size, 
         }
     }
 
-    return (void *)0;
+    return (void *)(base + r * size);
 }

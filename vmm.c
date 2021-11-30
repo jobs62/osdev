@@ -2,6 +2,8 @@
 #include "io.h"
 #include "vmm.h"
 #include "pmm.h"
+#include "interrupt.h"
+#include "stdlib.h"
 
 #define FIRST_12BITS_MASK 0xFFF
 
@@ -11,16 +13,37 @@
 #define VM_PT_MOUNT_BASE (virtaddr_t)0xB0000000
 #define VM_PDINDEX_TO_PTR(index) ((unsigned int *)((uint32_t)VM_PT_MOUNT_BASE | ((index) << VM_PTINDEX_SHIFT)))
 #define VM_VITRADDR_TO_PDINDEX(virtaddr) ((uint32_t)(virtaddr) >> VM_PDINDEX_SHIFT)
-#define VM_VITRADDR_TO_PTINDEX(virtaddr) ((uint32_t)(virtaddr) >> VM_PTINDEX_SHIFT & 0x03FF)
+#define VM_VITRADDR_TO_PTINDEX(virtaddr) (((uint32_t)(virtaddr) >> VM_PTINDEX_SHIFT) & 0x03FF)
 #define VM_INDEXES_TO_PTR(pdindex, ptindex) (void *)(((pdindex) << VM_PDINDEX_SHIFT) | ((ptindex) << VM_PTINDEX_SHIFT))
 
+
+
+struct vm_entry {
+    void *base;
+    uint32_t size;
+    uint32_t flags;
+};
+
+struct vm_entry vm_map[1024]; //that should be in task struct
+uint32_t vm_map_size = 0;
+
+int vm_entry_cmp(const void  *key, const void *obj, void *ext) {
+    struct vm_entry *map_entry = (struct vm_entry *)obj;
+
+    if (key < map_entry->base) {
+        return -1;
+    } else if (key >= map_entry->base + map_entry->size) {
+        return 1;
+    } else {
+        return 0;
+    }
+}
 
 extern void PAGE_DIRECTORY(void);
 extern void PAGE_TABLE(void);
 unsigned int * kpage_directory = (unsigned int *)&PAGE_DIRECTORY;
 
-static void alloc_kbrk(void *min, void *max);
-static void free_kbrk(void *min, void *max);
+static void page_fault_interrupt_handler(unsigned int interrupt, void *ext);
 
 physaddr_t get_physaddr(virtaddr_t virtaddr) {
     unsigned int pdindex = VM_VITRADDR_TO_PDINDEX(virtaddr);
@@ -46,7 +69,7 @@ physaddr_t get_physaddr(virtaddr_t virtaddr) {
     return (ptentry & ~FIRST_12BITS_MASK) + ((unsigned int)virtaddr & FIRST_12BITS_MASK);
 }
 
-void map_page(physaddr_t physadd, virtaddr_t virtaddr, unsigned int flags) {
+int map_page(physaddr_t physadd, virtaddr_t virtaddr, unsigned int flags) {
     //kprintf("map_page: physadd: 0x%8h; virtaddr: 0x%8h; flags: 0x%8h\n", physadd, virtaddr, flags);
 
     unsigned int pdindex = VM_VITRADDR_TO_PDINDEX(virtaddr);
@@ -60,7 +83,7 @@ void map_page(physaddr_t physadd, virtaddr_t virtaddr, unsigned int flags) {
         kprintf("pa: 0x%8h\n", pagetable_physmap);
         if (pagetable_physmap == 0) {
             kprintf("ERROR: could not get page\n");
-            return;
+            return 1;
         }
 
         bitmap_mark_as_used(pagetable_physmap);
@@ -73,12 +96,15 @@ void map_page(physaddr_t physadd, virtaddr_t virtaddr, unsigned int flags) {
         memset(pt, 0, PAGE_SIZE);
     }
 
+    //kprintf("pt: 0x%8h; ptindex: %1d\n", pt, ptindex);
     if ((pt[ptindex] & 0x00000001) != 0) {
         kprintf("ERROR: pte is present; map not free to use !\n");
-        return;
+        return 2;
     }
 
     pt[ptindex] = (physadd & ~FIRST_12BITS_MASK) | (flags & FIRST_12BITS_MASK) | VM_PAGE_PRESENT;
+
+    return (0);
 }
 
 void unmap_page(virtaddr_t virtaddr) {
@@ -129,82 +155,118 @@ void vmm_init() {
     ((unsigned int *)&PAGE_TABLE)[PAGE_LEN - 1] = (pagetable_physmap & ~FIRST_12BITS_MASK) | VM_PAGE_READ_WRITE;
 
     vmm_base[VM_VITRADDR_TO_PDINDEX(VM_PT_MOUNT_BASE) * PAGE_LEN + VM_VITRADDR_TO_PDINDEX(KERNAL_MAP_BASE)] = ((unsigned int)(&PAGE_TABLE - KERNAL_MAP_BASE) & ~FIRST_12BITS_MASK) | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT;
+
+    memset(vm_map, 0, sizeof(vm_map));
+    vm_map[1].base = (void *)0xffffffff;
+    vm_map_size = 2;
+    register_interrupt(0xE, page_fault_interrupt_handler, 0);
 }
 
-void *get_kbrk() {
-    int pdindex;
-    int ptindex;
+void *add_vm_entry(void *hint, uint32_t size, uint32_t flags) {
+    struct vm_entry *lower = (struct vm_entry *)bsearch_sf(hint, vm_map, vm_map_size, sizeof(struct vm_entry), vm_entry_cmp, (void *)0);
+    uint32_t index = (vm_map - lower) / sizeof(struct vm_entry);
 
-    for (pdindex = PAGE_LEN - 1; pdindex > 0; pdindex--) {
-        ptindex = PAGE_LEN - 1;
-        if ((kpage_directory[pdindex] & 0x00000001) == 0) {
-            goto get_brk_endloop;
-        }
-        
-        unsigned int *pt = (unsigned int *)VM_PDINDEX_TO_PTR(ptindex);
-        for (; ptindex > 0; ptindex--) {
-            if ((pt[ptindex] & 0x00000001) == 0) {
-                goto get_brk_endloop;
-            }
-        }
-    }
-get_brk_endloop:
-
-    if (pdindex == PAGE_LEN - 1  && ptindex == PAGE_LEN - 1) {
-        return (void *)~0;
+    if (vm_map_size >= 1024) {
+        return (void *)0;
     }
 
-    return VM_INDEXES_TO_PTR(pdindex, ptindex);
+    //find a free and ordered index
+find_empty_spot:
+    if (index >= vm_map_size) {
+        goto tail;
+    }
+
+    if (vm_map[index].base + vm_map[index].size > hint) {
+        hint = vm_map[index].base + vm_map[index].size ;
+    }
+
+    if (vm_map[index + 1].base < hint + size) {
+        index += 1;
+    }
+
+    if (vm_map[index].base + vm_map[index].size > hint
+         || vm_map[index + 1].base < hint + size) {
+        goto find_empty_spot;
+    }
+
+    if (vm_map[index].size != 0) {
+        //memmove-like thing
+        for (uint32_t i = 1023; i > index; i--) {
+            memcpy(&vm_map[i+1], &vm_map[i], sizeof(struct vm_entry));
+        }
+
+        index += 1;
+    }
+tail:
+    //add the entry
+    vm_map[index].base = hint;
+    vm_map[index].size = size;
+    vm_map[index].flags = flags;
+    vm_map_size++;
+
+    //post-check the "guard zero"
+    if (vm_map[0].base != 0) {
+        for (int32_t i = 1023; i >= 0; i--) {
+            memcpy(&vm_map[i+1], &vm_map[i], sizeof(struct vm_entry));
+        }
+
+        memset(&vm_map[0], 0, sizeof(struct vm_entry));
+        index += 1;
+    }
+
+    return vm_map[index].base;
 }
 
-static void alloc_kbrk(void *min, void *max) {
-    if (max == (void *)~0) {
-        //carful with overflow at first alloc
-        unsigned int pagetable_physmap = bitmap_find_free_page();
-        if (pagetable_physmap == 0) {
-            kprintf("ERROR: could not get page\n");
-            return;
-        }
+static void page_fault_interrupt_handler(unsigned int interrupt, void *ext) {
+    virtaddr_t faulty_address;
+    struct vm_entry *vm;
+    uint8_t flags;
 
-        bitmap_mark_as_used(pagetable_physmap);
+    asm volatile("mov %%cr2, %0" : "=r"(faulty_address));
 
-        map_page(pagetable_physmap, (void *)(~0 & ~FIRST_12BITS_MASK), VM_PAGE_READ_WRITE);
-
-        max = (void*)(~0 & ~FIRST_12BITS_MASK);
+    vm = (struct vm_entry *)bsearch_sf(faulty_address, vm_map, vm_map_size, sizeof(struct vm_entry), vm_entry_cmp, (void *)0);
+    if (vm == (void *)0) {
+        //shit hit the fan hard
+        goto page_fault;
     }
 
-    for (; min < max; min += PAGE_SIZE) {
-        unsigned int pagetable_physmap = bitmap_find_free_page();
-        if (pagetable_physmap == 0) {
-            kprintf("ERROR: could not get page\n");
-            return;
-        }
+    if (faulty_address < vm->base || faulty_address >= vm->base + vm->size) {
+        //this is not the droid you are looking for
+        kprintf("base: 0x%8h; size: %d;\n",  vm->base, vm->size);
+page_fault:
+        kprintf("PAGE FAULT at 0x%8h\n", faulty_address);
+        asm volatile ("hlt");
+        return;
+    }
 
-        bitmap_mark_as_used(pagetable_physmap);
+    physaddr_t physaddr = bitmap_find_free_page();
+    if (physaddr == 0) {
+        //We are out of memory, so maybe try to clean stuff and retry
+        kprintf("Out Of Memory\n");
+        asm volatile ("hlt");
+        return;
+    }
 
-        map_page(pagetable_physmap, min, 0x02);
+    flags = 0;
+    if (vm->flags & VM_MAP_WRITE) {
+        flags |= VM_PAGE_READ_WRITE;
+    }
+    if (vm->flags & VM_MAP_USER) {
+        flags |= VM_PAGE_USER_ACCESS;
+    }
+
+    bitmap_mark_as_used(physaddr);
+    if (map_page(physaddr, vm->base, flags) != 0) {
+        //Something went very wrong
+        kprintf("PANIC at 0x%8h\n", faulty_address);
+        asm volatile ("hlt");
+        return;
     }
 }
 
-#define GET_BEGINGIN_PREV_PAGE(page) ((unsigned int *)((((unsigned int)(page) >> VM_PTINDEX_SHIFT) - 1) << VM_PTINDEX_SHIFT))
-
-static void free_kbrk(void *min, void *max) {
-    for (; min < max; min = (void *)GET_BEGINGIN_PREV_PAGE(min)) {
-        unsigned int pagetable_physmap = get_physaddr(min);
-        unmap_page(min);
-        bitmap_mark_as_free(pagetable_physmap);
-    }
-}
-
-void set_kbrk(void *addr) {
-    void *a;
-    void *b;
-
-    a = addr;
-    b = get_kbrk();
-    if (a > b) {
-        free_kbrk(b, a);
-    } else {
-        alloc_kbrk(a, b);
+void dump_vm_map() {
+    kprintf("\n=== VM DUMP ===\n");
+    for (int i = 0; i < 20; i++) {
+        kprintf("%5d: 0x%8h (%1d)\n", i, vm_map[i].base, vm_map[i].size);
     }
 }

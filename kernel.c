@@ -113,12 +113,14 @@ void kmain(unsigned long magic, unsigned long addr) {
         }
     }
     bitmap_mark_as_used(0); //damn BUUUGGG
-    asm volatile("sti");
 
     vmm_init();
 
+    asm volatile("sti");
+
     pci_scan_bus(0);
 
+    /*
     struct fat_directory_iterator fat_dir;
     struct fat_sector_itearator fat_sec;
     struct fat_directory_entry *sec;
@@ -149,6 +151,12 @@ void kmain(unsigned long magic, unsigned long addr) {
             //}
         }
     }
+    */
+
+    /* oh boy */
+    int *maptest = (int *)add_vm_entry(0, PAGE_SIZE, VM_MAP_ANONYMOUS | VM_MAP_WRITE);
+    maptest[0] = 8;
+    kprintf("maptest: %1d (0x%8h)\n", maptest[0], maptest);
 
     prepare_switch_to_usermode();
 }
@@ -278,16 +286,14 @@ extern void update_kernel_stack(void *stack);
 #define USER_STACk (virtaddr_t)0xbfffffff
 
 void prepare_switch_to_usermode() {
-    unsigned int *user_mode_upper_limit = get_kbrk();
-    unsigned int *user_page_directory = GET_BEGINGIN_PREV_PAGE(user_mode_upper_limit);
-    unsigned int *user_kernel_table_directory = GET_BEGINGIN_PREV_PAGE(user_page_directory);
-    unsigned int *user_stack_table_directory = GET_BEGINGIN_PREV_PAGE(user_kernel_table_directory);
-    unsigned int *user_stack_limit =  GET_BEGINGIN_PREV_PAGE(user_stack_table_directory);
-    unsigned int *kernel_stack_limit =  GET_BEGINGIN_PREV_PAGE(user_stack_limit);
-    set_kbrk(kernel_stack_limit);
+    unsigned int *user_page_directory = add_vm_entry(0, PAGE_SIZE, VM_MAP_ANONYMOUS | VM_MAP_WRITE);
+    unsigned int *user_kernel_table_directory = add_vm_entry(0, PAGE_SIZE, VM_MAP_ANONYMOUS | VM_MAP_WRITE);
+    unsigned int *user_stack_table_directory = add_vm_entry(0, PAGE_SIZE, VM_MAP_ANONYMOUS | VM_MAP_WRITE);
+    unsigned int *user_stack_limit =  add_vm_entry(0, PAGE_SIZE, VM_MAP_ANONYMOUS | VM_MAP_USER | VM_MAP_WRITE) + PAGE_SIZE - 1;
+    unsigned int *kernel_stack_limit =  add_vm_entry(0, PAGE_SIZE, VM_MAP_ANONYMOUS | VM_MAP_WRITE) + PAGE_SIZE - 1;
 
-    kprintf("user_mode_upper_limit: 0x%8h; user_page_directory: 0x%8h; user_stack_table_directory: 0x%8h; user_stack_limit: 0x%8h\n",
-        user_mode_upper_limit, user_page_directory, user_stack_table_directory, user_stack_limit);
+    kprintf("user_page_directory: 0x%8h; user_stack_table_directory: 0x%8h; user_stack_limit: 0x%8h\n",
+        user_page_directory, user_stack_table_directory, user_stack_limit);
 
     memset(user_page_directory, 0, PAGE_SIZE);
     user_page_directory[VM_VITRADDR_TO_PDINDEX(KERNAL_MAP_BASE)] = (get_physaddr(user_kernel_table_directory) & ~FIRST_12BITS_MASK) | VM_PAGE_USER_ACCESS | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT; //kernel mapping
