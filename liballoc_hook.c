@@ -11,7 +11,7 @@ int liballoc_unlock() {
 }
 
 void* liballoc_alloc(int pages) {
-    return add_vm_entry(0, pages * PAGE_SIZE, VM_MAP_ANONYMOUS | VM_MAP_WRITE | VM_MAP_KERNEL);
+    return add_vm_entry((void *)0xC0200000, pages * PAGE_SIZE, VM_MAP_ANONYMOUS | VM_MAP_WRITE | VM_MAP_KERNEL);
 }
 
 int liballoc_free(void *ptr, int pages) {

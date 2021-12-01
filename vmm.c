@@ -69,7 +69,7 @@ physaddr_t get_physaddr(virtaddr_t virtaddr) {
 }
 
 int map_page(physaddr_t physadd, virtaddr_t virtaddr, unsigned int flags) {
-    //kprintf("map_page: physadd: 0x%8h; virtaddr: 0x%8h; flags: 0x%8h\n", physadd, virtaddr, flags);
+    kprintf("map_page: physadd: 0x%8h; virtaddr: 0x%8h; flags: 0x%8h\n", physadd, virtaddr, flags);
 
     unsigned int pdindex = VM_VITRADDR_TO_PDINDEX(virtaddr);
     unsigned int ptindex = VM_VITRADDR_TO_PTINDEX(virtaddr);
@@ -156,8 +156,8 @@ void vmm_init() {
     vmm_base[VM_VITRADDR_TO_PDINDEX(VM_PT_MOUNT_BASE) * PAGE_LEN + VM_VITRADDR_TO_PDINDEX(KERNAL_MAP_BASE)] = ((unsigned int)(&PAGE_TABLE - KERNAL_MAP_BASE) & ~FIRST_12BITS_MASK) | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT;
 
     memset(vm_map, 0, sizeof(vm_map));
-    vm_map[1].base = (void *)0xffffffff;
-    vm_map_size = 2;
+    vm_map[0].base = (void *)0xffffffff;
+    vm_map_size = 1;
     register_interrupt(0xE, page_fault_interrupt_handler, 0);
 }
 
@@ -269,6 +269,7 @@ static void page_fault_interrupt_handler(unsigned int interrupt, void *ext) {
         kprintf("base: 0x%8h; size: %d;\n",  vm->base, vm->size);
 page_fault:
         kprintf("PAGE FAULT at 0x%8h\n", faulty_address);
+        dump_vm_map();
         asm volatile ("hlt");
         return;
     }
@@ -290,9 +291,10 @@ page_fault:
     }
 
     bitmap_mark_as_used(physaddr);
-    if (map_page(physaddr, vm->base, flags) != 0) {
+    if (map_page(physaddr, (virtaddr_t)((uint32_t)faulty_address & ~FIRST_12BITS_MASK), flags) != 0) {
         //Something went very wrong
         kprintf("PANIC at 0x%8h\n", faulty_address);
+        dump_vm_map();
         asm volatile ("hlt");
         return;
     }

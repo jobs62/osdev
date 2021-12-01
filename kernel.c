@@ -287,11 +287,11 @@ extern void update_kernel_stack(void *stack);
 #define USER_STACk (virtaddr_t)0xbfffffff
 
 void prepare_switch_to_usermode() {
-    unsigned int *user_page_directory = add_vm_entry(0, PAGE_SIZE, VM_MAP_ANONYMOUS | VM_MAP_WRITE | VM_MAP_KERNEL);
-    unsigned int *user_kernel_table_directory = add_vm_entry(0, PAGE_SIZE, VM_MAP_ANONYMOUS | VM_MAP_WRITE | VM_MAP_KERNEL);
-    unsigned int *user_stack_table_directory = add_vm_entry(0, PAGE_SIZE, VM_MAP_ANONYMOUS | VM_MAP_WRITE | VM_MAP_KERNEL);
-    unsigned int *user_stack_limit =  add_vm_entry(0, PAGE_SIZE, VM_MAP_ANONYMOUS | VM_MAP_USER | VM_MAP_WRITE | VM_MAP_USER ) + PAGE_SIZE - 1;
-    unsigned int *kernel_stack_limit =  add_vm_entry(0, PAGE_SIZE, VM_MAP_ANONYMOUS | VM_MAP_WRITE | VM_MAP_KERNEL) + PAGE_SIZE - 1;
+    unsigned int *user_page_directory = malloc(PAGE_SIZE);
+    unsigned int *user_kernel_table_directory = malloc(PAGE_SIZE);
+    unsigned int *user_stack_table_directory = malloc(PAGE_SIZE);
+    unsigned int *user_stack_limit =  add_vm_entry(0x1000, PAGE_SIZE, VM_MAP_ANONYMOUS | VM_MAP_USER | VM_MAP_WRITE | VM_MAP_USER );
+    unsigned int *kernel_stack_limit =  malloc(PAGE_SIZE) + PAGE_SIZE - 1;
 
     kprintf("user_page_directory: 0x%8h; user_stack_table_directory: 0x%8h; user_stack_limit: 0x%8h\n",
         user_page_directory, user_stack_table_directory, user_stack_limit);
