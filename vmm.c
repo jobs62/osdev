@@ -175,65 +175,60 @@ void *add_vm_entry(void *hint, uint32_t size, uint32_t flags) {
         return 0;
     }
 
-    struct vm_entry *lower = (struct vm_entry *)bsearch_sf(hint, vm_map, vm_map_size, sizeof(struct vm_entry), vm_entry_cmp, (void *)0);
-    uint32_t index = (vm_map - lower) / sizeof(struct vm_entry);
+    uint32_t best_hint;
+    uint32_t best_lost_space;
+    uint32_t lost_space, i;
 
-    if (vm_map_size >= 1024) {
-        return (void *)0;
+    best_lost_space = 0xffffffff;
+    best_hint = 0;
+
+check_with_hint:
+    i = 0;
+
+    //test i veux dire que l'on peu le foutre entre i-1 et i
+    if (vm_map[0].base > hint + size) {
+        //it fit here with the hint
+        goto fit_with_hint;
     }
+    
+    for (i = 1; i < vm_map_size; i++) {
+        if (vm_map[i - 1].base + vm_map[i - 1].size <= hint && vm_map[i].base > hint + size) {
+fit_with_hint:
+            //it fit here with the hint
+            for (uint32_t j = vm_map_size; j > i; j--) {
+                memcpy(&vm_map[j], &vm_map[j-1], sizeof(struct vm_entry));
+            }
 
-    //find a free and ordered index
-find_empty_spot:
-    if (index >= vm_map_size) {
-        goto tail;
-    }
+            vm_map[i].base = hint;
+            vm_map[i].size = size;
+            vm_map[i].flags = flags;
+            vm_map_size++;
 
-    if (vm_map[index].base + vm_map[index].size > hint) {
-        hint = vm_map[index].base + vm_map[index].size;
-    }
-
-    if (vm_map[index + 1].base < hint + size) {
-        index += 1;
-    }
-
-    if (vm_map[index].base + vm_map[index].size > hint
-         || vm_map[index + 1].base < hint + size) {
-        goto find_empty_spot;
-    }
-
-    if (vm_map[index].size != 0) {
-        //memmove-like thing
-        for (uint32_t i = 1023; i > index; i--) {
-            memcpy(&vm_map[i+1], &vm_map[i], sizeof(struct vm_entry));
+            return (vm_map[i].base);
         }
 
-        index += 1;
-    }
-tail:
-    //add the entry
-    vm_map[index].base = hint;
-    vm_map[index].size = size;
-    vm_map[index].flags = flags;
-    vm_map_size++;
-
-    //post-check the "guard zero"
-    if (vm_map[0].base != 0) {
-        for (int32_t i = 1023; i >= 0; i--) {
-            memcpy(&vm_map[i+1], &vm_map[i], sizeof(struct vm_entry));
+        if (vm_map[i].base - (vm_map[i - 1].base + vm_map[i - 1].size) >= size) {
+            //it fit here, even if it's not the choosen hint
+            lost_space = vm_map[i].base - (vm_map[i - 1].base + vm_map[i - 1].size) - size;
+            if (lost_space < best_lost_space) {
+                best_lost_space = lost_space;
+                best_hint = vm_map[i - 1].base + vm_map[i - 1].size;
+            }
         }
-
-        memset(&vm_map[0], 0, sizeof(struct vm_entry));
-        index += 1;
     }
 
-    dump_vm_map();
+    hint = best_hint;
+    goto check_with_hint;
 
-    return vm_map[index].base;
+    return (0);
 }
 
 void rm_vm_entry(void *base) {
-    struct vm_entry *vm = (struct vm_entry *)bsearch_sf(base, vm_map, vm_map_size, sizeof(struct vm_entry), vm_entry_cmp, (void *)0);
+    struct vm_entry *vm = (struct vm_entry *)bsearch_s(base, vm_map, vm_map_size, sizeof(struct vm_entry), vm_entry_cmp, (void *)0);
     uint32_t index = (vm_map - vm) / sizeof(struct vm_entry);
+    if (vm == (void *)0) {
+        return;
+    }
 
     if (vm->base != base) {
         return;
@@ -263,7 +258,7 @@ static void page_fault_interrupt_handler(unsigned int interrupt, void *ext) {
 
     asm volatile("mov %%cr2, %0" : "=r"(faulty_address));
 
-    vm = (struct vm_entry *)bsearch_sf(faulty_address, vm_map, vm_map_size, sizeof(struct vm_entry), vm_entry_cmp, (void *)0);
+    vm = (struct vm_entry *)bsearch_s(faulty_address, vm_map, vm_map_size, sizeof(struct vm_entry), vm_entry_cmp, (void *)0);
     if (vm == (void *)0) {
         //shit hit the fan hard
         goto page_fault;
