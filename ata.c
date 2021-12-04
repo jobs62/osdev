@@ -235,7 +235,9 @@ void ata_init(struct pci_header *head, uint8_t bus, uint8_t slot, uint8_t fonc) 
 			 * ok, so the cable emulated by qemu seam to not be 80pins, wich should indicate that using udma > 2 is not a great idea
 			 * but udma 6 is enable on the drive so... maybe that why dma is acting wired ? but does is realy matter in a vm ?
 			 * i need to invastigate that crap...
-			 * for referance heree, cable 0x1020 and ubma: 0x2020
+			 * for referance heree, cable 0x1020 and ubma: 0x2020 dma shiting the bed
+			 * on maria: cable: 0x020, udma: 0x2020 and dma working
+			 * so it's realy cable related ? WTF
 			 */
 
 			// (VII) Get Size:
@@ -372,11 +374,11 @@ static uint8_t ide_ata_access(uint8_t direction, uint8_t drive, uint32_t lba, ui
 
    	// (II) See if drive supports DMA or not;
    	dma = 0; //by default use PIO
-	//if (channels[channel].bmide != channel * 8 && (get_physaddr(edi) % 4) == 0)  {
-	//	dma = 1; //enable dma if edi is sutable
-	//	// i guess i could also alloc and memcpy, but were is the fun ?
-	//	//TODO check 64k crossing bondaries
-	//}
+	if (channels[channel].bmide != channel * 8 && (get_physaddr(edi) % 4) == 0)  {
+		dma = 1; //enable dma if edi is sutable
+		// i guess i could also alloc and memcpy, but were is the fun ?
+		//TODO check 64k crossing bondaries
+	}
 	
    // (III) Wait if the drive is busy;
    while (ide_read(channel, ATA_REG_STATUS) & ATA_SR_BSY) {}
