@@ -154,6 +154,24 @@ void kmain(unsigned long magic, unsigned long addr) {
     }
     */
 
+    struct fat_sector_itearator sec;
+    char *path[] = { "HELLO", (void*)0 };
+    if (fat_open_from_path(&sec, path) != 0) {
+        kprintf("Oh! the shit the bed\n");
+        return;
+    }
+
+    char *vmfile = add_vm_entry(5000, PAGE_SIZE, VM_MAP_FILE | VM_MAP_KERNEL, &sec);
+    if (vmfile == 0) {
+        kprintf("Oh! the shit the bed2\n");
+        return;
+    }
+
+    kprintf("file content: %s\n", vmfile);
+    kprintf("surviver flag\n");
+
+    return;
+
     /* oh boy */
     int *maptest = (int *)malloc(sizeof(int) * 1000);
     maptest[300] = 8;
@@ -290,7 +308,7 @@ void prepare_switch_to_usermode() {
     unsigned int *user_page_directory = malloc(PAGE_SIZE);
     unsigned int *user_kernel_table_directory = malloc(PAGE_SIZE);
     unsigned int *user_stack_table_directory = malloc(PAGE_SIZE);
-    unsigned int *user_stack_limit =  add_vm_entry(0x1000, PAGE_SIZE, VM_MAP_ANONYMOUS | VM_MAP_USER | VM_MAP_WRITE | VM_MAP_USER );
+    unsigned int *user_stack_limit =  add_vm_entry(0x1000, PAGE_SIZE, VM_MAP_ANONYMOUS | VM_MAP_USER | VM_MAP_WRITE | VM_MAP_USER, 0);
     unsigned int *kernel_stack_limit =  malloc(PAGE_SIZE) + PAGE_SIZE - 1;
 
     kprintf("user_page_directory: 0x%8h; user_stack_table_directory: 0x%8h; user_stack_limit: 0x%8h\n",

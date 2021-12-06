@@ -2,6 +2,7 @@
 #define __VMM__
 
 #include "stdtype.h"
+#include "fat.h"
 
 #define VM_PDINDEX_SHIFT 22
 #define VM_PTINDEX_SHIFT 12
@@ -22,7 +23,7 @@ physaddr_t get_physaddr(virtaddr_t virtaddr);
 int map_page(physaddr_t physadd, virtaddr_t virtaddr, unsigned int flags);
 void unmap_page(virtaddr_t virtaddr);
 
-void *add_vm_entry(void *hint, uint32_t size, uint32_t flags);
+void *add_vm_entry(void *hint, uint32_t size, uint32_t flags, struct fat_sector_itearator *sec);
 void rm_vm_entry(void *base);
 void dump_vm_map(void);
 

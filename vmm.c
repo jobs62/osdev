@@ -1,9 +1,11 @@
+#include "ata.h"
 #include "stdtype.h"
 #include "io.h"
 #include "vmm.h"
 #include "pmm.h"
 #include "interrupt.h"
 #include "stdlib.h"
+#include "fat.h"
 
 #define FIRST_12BITS_MASK 0xFFF
 
@@ -21,6 +23,7 @@ struct vm_entry {
     void *base;
     uint32_t size;
     uint32_t flags;
+    struct fat_sector_itearator *sec;
 };
 
 struct vm_entry vm_map[1024]; //that should be in task struct
@@ -43,6 +46,7 @@ extern void PAGE_TABLE(void);
 unsigned int * kpage_directory = (unsigned int *)&PAGE_DIRECTORY;
 
 static void page_fault_interrupt_handler(unsigned int interrupt, void *ext);
+static int map_change_permission(virtaddr_t virtaddr, unsigned int flags);
 
 physaddr_t get_physaddr(virtaddr_t virtaddr) {
     unsigned int pdindex = VM_VITRADDR_TO_PDINDEX(virtaddr);
@@ -106,6 +110,30 @@ int map_page(physaddr_t physadd, virtaddr_t virtaddr, unsigned int flags) {
     return (0);
 }
 
+static int map_change_permission(virtaddr_t virtaddr, unsigned int flags) {
+    kprintf("map_change_permission: virtaddr: 0x%8h; flags: 0x%8h\n", virtaddr, flags);
+
+    unsigned int pdindex = VM_VITRADDR_TO_PDINDEX(virtaddr);
+    unsigned int ptindex = VM_VITRADDR_TO_PTINDEX(virtaddr);
+    unsigned int pdentry = (unsigned int)kpage_directory[pdindex];
+    unsigned int *pt = VM_PDINDEX_TO_PTR(pdindex);
+
+    if ((pdentry & 0x00000001) == 0) {
+        kprintf("ERROR: map_change_permission: addr not mapped");
+        return (0);
+    }
+
+    if ((pt[ptindex] & 0x00000001) == 0) {
+        kprintf("ERROR: map_change_permission: addr not mapped 2");
+        return 2;
+    }
+
+    pt[ptindex] = (pt[ptindex] & ~FIRST_12BITS_MASK) | (flags & FIRST_12BITS_MASK) | VM_PAGE_PRESENT;
+
+    return (0);
+}
+
+
 void unmap_page(virtaddr_t virtaddr) {
     unsigned int pdindex = VM_VITRADDR_TO_PDINDEX(virtaddr);
     unsigned int ptindex = VM_VITRADDR_TO_PTINDEX(virtaddr);
@@ -161,7 +189,7 @@ void vmm_init() {
     register_interrupt(0xE, page_fault_interrupt_handler, 0);
 }
 
-void *add_vm_entry(void *hint, uint32_t size, uint32_t flags) {
+void *add_vm_entry(void *hint, uint32_t size, uint32_t flags, struct fat_sector_itearator *sec) {
     //check flags for idotique things
     if ((flags & VM_MAP_USER) && (flags & VM_MAP_KERNEL)) {
         return 0;
@@ -172,6 +200,10 @@ void *add_vm_entry(void *hint, uint32_t size, uint32_t flags) {
     }
 
     if ((flags & VM_MAP_ANONYMOUS) && (flags & VM_MAP_FILE)) {
+        return 0;
+    }
+
+    if ((flags & VM_MAP_FILE) && sec == (void*)0) {
         return 0;
     }
 
@@ -202,6 +234,7 @@ fit_with_hint:
             vm_map[i].base = hint;
             vm_map[i].size = size;
             vm_map[i].flags = flags;
+            vm_map[i].sec = sec;
             vm_map_size++;
 
             return (vm_map[i].base);
@@ -258,6 +291,11 @@ static void page_fault_interrupt_handler(unsigned int interrupt, void *ext) {
 
     asm volatile("mov %%cr2, %0" : "=r"(faulty_address));
 
+    if (get_physaddr(faulty_address) != 0) {
+        //that's a perm issue, burn it with fire
+        goto page_fault;
+    }
+
     vm = (struct vm_entry *)bsearch_s(faulty_address, vm_map, vm_map_size, sizeof(struct vm_entry), vm_entry_cmp, (void *)0);
     if (vm == (void *)0) {
         //shit hit the fan hard
@@ -282,7 +320,7 @@ page_fault:
         return;
     }
 
-    flags = 0;
+    flags = VM_PAGE_READ_WRITE;
     if (vm->flags & VM_MAP_WRITE) {
         flags |= VM_PAGE_READ_WRITE;
     }
@@ -291,13 +329,28 @@ page_fault:
     }
 
     bitmap_mark_as_used(physaddr);
-    if (map_page(physaddr, (virtaddr_t)((uint32_t)faulty_address & ~FIRST_12BITS_MASK), flags) != 0) {
+    if (map_page(physaddr, (virtaddr_t)((uint32_t)faulty_address & ~FIRST_12BITS_MASK), flags | VM_PAGE_READ_WRITE) != 0) {
         //Something went very wrong
         kprintf("PANIC at 0x%8h\n", faulty_address);
         dump_vm_map();
         asm volatile ("hlt");
         return;
     }
+
+    if (vm->flags & VM_MAP_FILE) {
+        uint32_t lba;
+        for (uint8_t i = 0; i < 4096 / 512; i++) {
+            kprintf("penich\n");
+            lba = fat_sector_iterator_next(vm->sec); //TODO: FIXME: this is not correct since it doesnt seek into the file, beacause i dont have de seek fs...
+            if (lba == 0) {
+                break;
+            }
+
+            ide_read_sectors(vm->sec->fat->device, 1, lba, vm->base + i * 512);
+        }
+    }
+
+    map_change_permission(faulty_address, flags);
 }
 
 void dump_vm_map() {

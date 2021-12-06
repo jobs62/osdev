@@ -366,3 +366,47 @@ fetch_next_one:
 	
 	return fat_directory_entry;
 }
+
+int fat_name_cmp(unsigned char *left, char *rigth) {
+	uint8_t buffer[11];
+	char *q = rigth;
+
+	memcpy(buffer, left, 11);
+	buffer[8] = '\0';
+	char *p = buffer;
+
+	//thats a gross simlification of fat naming
+	while(*p == *q) {
+		p++;
+		q++;
+	}
+
+	if (*p == ' ' && *q == '\0') {
+		return (0);
+	}
+
+	return (1);
+}
+
+int fat_open_from_path(struct fat_sector_itearator *iter, char *path[]) {
+	struct fat_directory_iterator inner;
+	struct fat_directory_iterator inner2;
+	struct fat_directory_entry *direntry;
+	uint32_t i = 0;
+
+	fat_directory_iterator_root_dir(&inner, &fs);
+	while ((direntry = fat_directory_iterator_next(&inner)) != (void *)0) {
+		if (fat_name_cmp(direntry->DIR_Name, path[i]) == 0) {
+			i++;
+			if (path[i] == (void *)0) {
+				fat_sector_itearator(iter, direntry, &fs);
+				return (0);
+			} else {
+				fat_directory_iterator(&inner2, direntry, &fs);
+				fat_directory_itearator_copy(&inner, &inner2);
+			}
+		}
+	}
+
+	return (1);
+}

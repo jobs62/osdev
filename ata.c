@@ -389,7 +389,7 @@ static uint8_t ide_ata_access(uint8_t direction, uint8_t drive, uint32_t lba, ui
 
    	// (II) See if drive supports DMA or not;
    	dma = ide_devices[drive].udma != 0;
-	
+
    // (III) Wait if the drive is busy;
    while (ide_read(channel, ATA_REG_STATUS) & ATA_SR_BSY) {}
 
@@ -473,9 +473,19 @@ static uint8_t ide_ata_access(uint8_t direction, uint8_t drive, uint32_t lba, ui
 }
 
 static uint8_t ide_polling(uint8_t channel, uint8_t advanced_check) {
+	// (I) Delay 400 nanosecond for BSY to be set:
+   // -------------------------------------------------
+   for(int i = 0; i < 4; i++)
+      ide_read(channel, ATA_REG_ALTSTATUS); // Reading the Alternate Status port wastes 100ns; loop four times.
+ 
+   // (II) Wait for BSY to be cleared:
+   // -------------------------------------------------
+   while (ide_read(channel, ATA_REG_STATUS) & ATA_SR_BSY) {} // Wait for BSY to be zero.
+	/*
 	while (ide_irq_invoked == 0) {
 		asm volatile("hlt");
 	}
+	*/
    	if (advanced_check) {
     	unsigned char state = ide_read(channel, ATA_REG_STATUS); // Read Status Register.
  

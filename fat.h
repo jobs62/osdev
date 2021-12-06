@@ -59,6 +59,7 @@ void fat_directory_iterator_root_dir(struct fat_directory_iterator *iter, struct
 void fat_directory_iterator(struct fat_directory_iterator *iter, struct fat_directory_entry *dir, struct fat_fs *fat);
 struct fat_directory_entry *fat_directory_iterator_next(struct fat_directory_iterator *iter);
 void fat_sector_itearator(struct fat_sector_itearator *iter, struct fat_directory_entry *dir, struct fat_fs *fat);
+int fat_open_from_path(struct fat_sector_itearator *iter, char *path[]);
 
 inline void fat_sector_itearator_copy(struct fat_sector_itearator *dst, struct fat_sector_itearator *src) {
 	memcpy(dst, src, sizeof(struct fat_sector_itearator));
