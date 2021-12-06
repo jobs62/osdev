@@ -123,6 +123,21 @@ static uint8_t ide_ata_access(uint8_t direction, uint8_t drive, uint32_t lba, ui
 #define ATA_IDENT_COMMANDSETS 164
 #define ATA_IDENT_MAX_LBA_EXT 200
 
+enum ata_dma_support {
+	ATA_DMA_NO,
+	ATA_DMA_MULTIWORD_0,
+	ATA_DMA_MULTIWORD_1,
+	ATA_DMA_MULTIWORD_2,
+	ATA_DMA_UDMA_0,
+	ATA_DMA_UDMA_1,
+	ATA_DMA_UDMA_2,
+	ATA_DMA_UDMA_3,
+	ATA_DMA_UDMA_4,
+	ATA_DMA_UDMA_5,
+	ATA_DMA_UDMA_6,
+	ATA_DMA_UDMA_7,
+};
+
 unsigned char ide_buf[2048] = {0};
 unsigned volatile static char ide_irq_invoked = 0;
 unsigned static char atapi_packet[12] = {0xA8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
@@ -130,6 +145,7 @@ unsigned static char atapi_packet[12] = {0xA8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 extern void sleep(unsigned int t);
 
 void ide_int(unsigned int intno, void *ext);
+static enum ata_dma_support ata_detect_dma(void);
 
 void ata_init(struct pci_header *head, uint8_t bus, uint8_t slot, uint8_t fonc) {
 	uint32_t bar0, bar1, bar2, bar3, bar4;
@@ -228,9 +244,8 @@ void ata_init(struct pci_header *head, uint8_t bus, uint8_t slot, uint8_t fonc) 
 			ide_devices[count].Signature = *((unsigned short *)(ide_buf + ATA_IDENT_DEVICETYPE));
 			ide_devices[count].Capabilities = *((unsigned short *)(ide_buf + ATA_IDENT_CAPABILITIES));
 			ide_devices[count].CommandSets = *((unsigned int *)(ide_buf + ATA_IDENT_COMMANDSETS));
-			ide_devices[count].udma = *((unsigned short *)(ide_buf + ATA_IDENT_UDMA));
-
-			kprintf("cable: 0x%4h\n", *((unsigned short *)(ide_buf + ATA_IDENT_CABLE)));
+			ide_devices[count].udma = ata_detect_dma();
+			
 			/*
 			 * ok, so the cable emulated by qemu seam to not be 80pins, wich should indicate that using udma > 2 is not a great idea
 			 * but udma 6 is enable on the drive so... maybe that why dma is acting wired ? but does is realy matter in a vm ?
@@ -373,12 +388,7 @@ static uint8_t ide_ata_access(uint8_t direction, uint8_t drive, uint32_t lba, ui
 	}
 
    	// (II) See if drive supports DMA or not;
-   	dma = 0; //by default use PIO
-	if (channels[channel].bmide != channel * 8 && (get_physaddr(edi) % 4) == 0)  {
-		dma = 1; //enable dma if edi is sutable
-		// i guess i could also alloc and memcpy, but were is the fun ?
-		//TODO check 64k crossing bondaries
-	}
+   	dma = ide_devices[drive].udma != 0;
 	
    // (III) Wait if the drive is busy;
    while (ide_read(channel, ATA_REG_STATUS) & ATA_SR_BSY) {}
@@ -522,5 +532,49 @@ void ide_int(unsigned int intno, void *ext) {
 	} else {
 		//kprintf("secodary ide master bus status: 0x%2h;\n", ide_read(ATA_SECONDARY, ATA_BMR_STATUS));
 		ide_write(ATA_SECONDARY, ATA_BMR_STATUS, 0x4);
+	}
+}
+
+
+
+static enum ata_dma_support ata_detect_dma() {
+	if ((*((unsigned short *)(ide_buf + 49)) & 0x10) == 0) {
+		return ATA_DMA_NO;
+	}
+
+	if ((*((unsigned short *)(ide_buf + 53)) & 0x08) == 0) {
+		//word 88 is not valid, so use word 63 i guess?
+		switch (*((unsigned short *)(ide_buf + 63)) >> 8) {
+			case 1:
+				return ATA_DMA_MULTIWORD_0;
+			case 2:
+				return ATA_DMA_MULTIWORD_1;
+			case 4:
+				return ATA_DMA_MULTIWORD_2;
+			default:
+				return ATA_DMA_NO;
+		}
+	} else {
+		//word 88 is valid, so use it ?
+		switch (*((unsigned short *)(ide_buf + 88)) >> 8) {
+			case 1:
+				return ATA_DMA_UDMA_0;
+			case 2:
+				return ATA_DMA_UDMA_1;
+			case 4:
+				return ATA_DMA_UDMA_2;
+			case 8:
+				return ATA_DMA_UDMA_3;
+			case 16:
+				return ATA_DMA_UDMA_4;
+			case 32:
+				return ATA_DMA_UDMA_5;
+			case 64:
+				return ATA_DMA_UDMA_6;
+			case 128:
+				return ATA_DMA_UDMA_7;
+			default:
+				return ATA_DMA_NO;
+		}
 	}
 }
