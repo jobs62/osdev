@@ -32,7 +32,7 @@ myos.iso: myos.bin
 	grub-mkrescue -o myos.iso isodir
 
 run: myos.bin
-	qemu-system-i386 -monitor stdio -kernel myos.bin -no-shutdown -no-reboot -drive file=disk.img
+	qemu-system-i386 -monitor stdio -kernel myos.bin -no-shutdown -no-reboot -drive file=disk.img,if=virtio
 
 clean:
 	rm -rf isodir
