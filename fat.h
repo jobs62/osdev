@@ -3,6 +3,7 @@
 
 #include "stdtype.h"
 #include "stdlib.h"
+#include "bdev.h"
 
 #define FAT_TYPE_12 1
 #define FAT_TYPE_16 2
@@ -52,7 +53,7 @@ struct fat_directory_iterator{
 	uint8_t eoi;
 };
 
-void fat_init(uint8_t drive);
+enum bdev_payload_status fat_init(uint8_t drive);
 uint32_t fat_sector_iterator_next(struct fat_sector_itearator *iter);
 uint32_t fat_sector_iterator_root_dir(struct fat_sector_itearator *iter, struct fat_fs *fat);
 void fat_directory_iterator_root_dir(struct fat_directory_iterator *iter, struct fat_fs *fat);

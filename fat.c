@@ -61,14 +61,14 @@ struct fat_bpb {
 
 struct fat_fs fs;
 
-void fat_init(uint8_t drive) {
+enum bdev_payload_status fat_init(uint8_t drive) {
 	struct fat_bpb bpb;
 	fs.fat_type = FAT_TYPE_NONE;
 	uint8_t err;
 
 	if ((err = bdev_read(drive, 1, 0, &bpb)) != 0) {
 		kprintf("ide_read_sectore error (%d)\n", err);
-		return;
+		return BDEV_ERROR;
 	}
 
 	if (bpb.common.BPB_BytsPerSec == 0) {
@@ -144,11 +144,11 @@ void fat_init(uint8_t drive) {
 		case FAT_TYPE_NONE:
 involid_fat_header:
 			kprintf("Invalid FAT partition\n");
-			return;
+			return BDEV_FORWARD;
 		case FAT_TYPE_12:
 			kprintf("FAT12 Not supported\n");
 			fs.fat_type = FAT_TYPE_NONE;
-			return;
+			return BDEV_ERROR;
 		case FAT_TYPE_16:
 			kprintf("FAT16\n");
 			break;
@@ -168,6 +168,8 @@ involid_fat_header:
 			fs.fat_root_dir_size = 0; //Size of root dir in illimited, and is only limited by FAT EoF
 			break;
 	}
+
+	return BDEV_SUCCESS;
 }
 
 uint32_t fat_sector_iterator_root_dir(struct fat_sector_itearator *iter, struct fat_fs *fat) {

@@ -3,6 +3,12 @@
 
 #include "stdtype.h"
 
+enum bdev_payload_status {
+    BDEV_SUCCESS,
+    BDEV_ERROR,
+    BDEV_FORWARD,
+};
+
 struct bdev_operation{
     int (*read)(void *bdev, uint32_t numsect, uint32_t lba, void *edi);
     int (*write)(void *bdev, uint32_t numsect, uint32_t lba, void *edi);
