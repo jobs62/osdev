@@ -117,6 +117,7 @@ void interrupt_handler(struct cpu_state cpu, unsigned int interrupt, struct stac
         PIC_sendEOI(interrupt);
         return;
     }
+    
 
     if (interrupt < 48 && int_reg[interrupt].present == 1) {
         int_reg[interrupt].fnc(interrupt, int_reg[interrupt].ext);
@@ -205,7 +206,7 @@ void setup_idt() {
 }
 
 void PIC_sendEOI(unsigned char irq) {
-    if (irq < PIC1_START_INTERRUPT || irq > PIC2_START_INTERRUPT + 7) {
+    if (irq < PIC1_START_INTERRUPT || irq >= PIC2_START_INTERRUPT + 7) {
         return; 
     }
 

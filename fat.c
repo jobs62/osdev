@@ -1,5 +1,5 @@
 #include "stdtype.h"
-#include "ata.h"
+#include "bdev.h"
 #include "fat.h"
 #include "stdlib.h"
 
@@ -66,7 +66,7 @@ void fat_init(uint8_t drive) {
 	fs.fat_type = FAT_TYPE_NONE;
 	uint8_t err;
 
-	if ((err = ide_read_sectors(drive, 1, 0, &bpb)) != 0) {
+	if ((err = bdev_read(drive, 1, 0, &bpb)) != 0) {
 		kprintf("ide_read_sectore error (%d)\n", err);
 		return;
 	}
@@ -235,7 +235,7 @@ uint32_t fat_sector_iterator_next(struct fat_sector_itearator *iter) {
 				break;
 		}
 
-		if ((err = ide_read_sectors(iter->fat->device, 1, ThisFATSecNum, buffer)) != 0) {
+		if ((err = bdev_read(iter->fat->device, 1, ThisFATSecNum, buffer)) != 0) {
 			kprintf("ide_read_sectore error (%d)\n", err);
 			iter->eoi = 1;
 		}
@@ -293,7 +293,7 @@ void fat_directory_iterator_root_dir(struct fat_directory_iterator *iter, struct
 	if (sec == 0) {
 		kprintf("fat_sector_iterator_next error\n");
 		iter->eoi = 1;
-	} else if ((err = ide_read_sectors(iter->sec_iter.fat->device, 1, sec, iter->direntry)) != 0) {
+	} else if ((err = bdev_read(iter->sec_iter.fat->device, 1, sec, iter->direntry)) != 0) {
 		kprintf("fat_sector_iterator_next error (%d)\n", err);
 		iter->eoi = 1;
 	} else {
@@ -317,7 +317,7 @@ void fat_directory_iterator(struct fat_directory_iterator *iter, struct fat_dire
 	if (sec == 0) {
 		iter->eoi = 1;
 	} else {
-		ide_read_sectors(iter->sec_iter.fat->device, 1, sec, iter->direntry); //Todo: manage errors
+		bdev_read(iter->sec_iter.fat->device, 1, sec, iter->direntry); //Todo: manage errors
 		iter->eoi = 0;
 	}
 }
@@ -343,7 +343,7 @@ fetch_next_one:
 		if (sec == 0) {
 			/* EoI */
 			iter->eoi = 1;
-		} else if ((err = ide_read_sectors(iter->sec_iter.fat->device, 1, sec, iter->direntry)) != 0) {
+		} else if ((err = bdev_read(iter->sec_iter.fat->device, 1, sec, iter->direntry)) != 0) {
 			kprintf("error ide_read_sector (%d)\n", err);
 			iter->eoi = 1;
 		} else {

@@ -6,6 +6,10 @@ static inline void outl(unsigned short port, unsigned int val) {
     asm volatile("outl %0, %1" : : "a"(val), "Nd"(port));
 }
 
+static inline void outw(unsigned short port, unsigned short val) {
+    asm volatile("outw %0, %1" : : "a"(val), "Nd"(port));
+}
+
 static inline unsigned char inb(unsigned short port) {
     unsigned char ret;
     asm volatile("inb %1, %0" : "=a"(ret) : "Nd"(port));
@@ -30,4 +34,16 @@ static inline void io_wait(void) {
 
 static inline void flush_tlb_single(unsigned int addr) {
    asm volatile("invlpg (%0)" ::"r" (addr) : "memory");
+}
+
+static inline void lfence() {
+    asm volatile("lfence" ::: "memory");
+}
+
+static inline void mfence() {
+    asm volatile("mfence" ::: "memory");
+}
+
+static inline void sfence() {
+    asm volatile("sfence" ::: "memory");
 }

@@ -7,6 +7,7 @@
 #include "pmm.h"
 #include "stdlib.h"
 #include "liballoc.h"
+#include "bdev.h"
 
 #define ROW 25
 #define COL 80
@@ -116,43 +117,11 @@ void kmain(unsigned long magic, unsigned long addr) {
     bitmap_mark_as_used(0); //damn BUUUGGG
 
     vmm_init();
+    bdev_init();
 
     asm volatile("sti");
 
     pci_scan_bus(0);
-
-    /*
-    struct fat_directory_iterator fat_dir;
-    struct fat_sector_itearator fat_sec;
-    struct fat_directory_entry *sec;
-    uint32_t sector;
-    uint8_t buffer[513];
-    uint32_t count = 0;
-    fat_directory_iterator_root_dir(&fat_dir, &fs);
-    while((sec = fat_directory_iterator_next(&fat_dir)) != 0) {
-        buffer[11] = '\0';
-		memcpy(buffer, sec->DIR_Name, 11);
-		kprintf("dir_entry: name: %s (%d) [%0d] (0x%8h:0x%8h)\n", buffer, sec->DIR_FileSize, count, fat_dir.sec_iter.current_cluster, fat_dir.sec_iter.current_sector);
-        if (sec->DIR_Attr & 0x10) {
-            struct fat_directory_iterator dir_dir;
-
-            fat_directory_iterator(&dir_dir, sec, &fs);
-            while((sec = fat_directory_iterator_next(&dir_dir)) != 0) {
-                buffer[11] = '\0';
-                memcpy(buffer, sec->DIR_Name, 11);
-                kprintf("dir_entry: name: %s (%d)\n", buffer, sec->DIR_FileSize);
-            }
-        } else {
-            count++;
-            fat_sector_itearator(&fat_sec, sec, &fs);
-            //while((sector = fat_sector_iterator_next(&fat_sec)) != 0) {
-                //buffer[512] = '\0';
-                //ide_read_sectors(fs.device, 1, sector, buffer);
-                //kprintf("%s", buffer);
-            //}
-        }
-    }
-    */
 
     struct fat_sector_itearator sec;
     char *path[] = { "HELLO", (void*)0 };

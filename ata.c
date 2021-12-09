@@ -2,7 +2,7 @@
 #include "pci.h"
 #include "ata.h"
 #include "io.h"
-#include "fat.h"
+#include "bdev.h"
 #include "vmm.h"
 #include "pmm.h"
 #include "interrupt.h"
@@ -146,147 +146,6 @@ extern void sleep(unsigned int t);
 
 void ide_int(unsigned int intno, void *ext);
 static enum ata_dma_support ata_detect_dma(void);
-
-void ata_init(struct pci_header *head, uint8_t bus, uint8_t slot, uint8_t fonc) {
-	uint32_t bar0, bar1, bar2, bar3, bar4;
-
-	kprintf("prog_if: 0x%4h; status: 0x%4h; bar4: 0x%8h\n", head->prog_if, head->status, head->specific.type0.bar4);
-
-	if ((head->prog_if & 1) == 0) {
-		bar0 = 0x1F0;
-		bar1 = 0x3F6;
-	} else {
-		bar0 = head->specific.type0.bar0;
-		bar1 = head->specific.type0.bar1;
-	}
-
-	if ((head->prog_if & 4) == 0) {
-		bar2 = 0x170;
-		bar3 = 0x376;
-	} else {
-		bar2 = head->specific.type0.bar2;
-		bar3 = head->specific.type0.bar3;
-	}
-
-	bar4 = head->specific.type0.bar4;
-
-	// 1- Detect I/O Ports which interface IDE Controller:
-	channels[ATA_PRIMARY].base = bar0 & 0xFFFFFFFC;
-	channels[ATA_PRIMARY].ctrl = bar1 & 0xFFFFFFFC;
-	channels[ATA_SECONDARY].base = bar2 & 0xFFFFFFFC;
-	channels[ATA_SECONDARY].ctrl = bar3 & 0xFFFFFFFC;
-	channels[ATA_PRIMARY].bmide = (bar4 & 0xFFFFFFFC) + 0;   // Bus Master IDE
-	channels[ATA_SECONDARY].bmide = (bar4 & 0xFFFFFFFC) + 8; // Bus Master IDE
-	channels[ATA_PRIMARY].bus = channels[ATA_SECONDARY].bus = bus;
-	channels[ATA_PRIMARY].slot = channels[ATA_SECONDARY].slot = fonc;
-	channels[ATA_PRIMARY].fonc = channels[ATA_SECONDARY].fonc = fonc;
-
-	// 2- Disable IRQs:
-	//ide_write(ATA_PRIMARY, ATA_REG_CONTROL, 2);
-	//ide_write(ATA_SECONDARY, ATA_REG_CONTROL, 2);
-	register_interrupt(0x2e, ide_int, 0);
-	register_interrupt(0x2f, ide_int, 0);
-
-	// 3- Detect ATA-ATAPI Devices:
-	int count = 0;
-	for (int i = 0; i < 2; i++) {
-		for (int j = 0; j < 2; j++) {
-			unsigned char err = 0, type = IDE_ATA, status;
-			ide_devices[count].Reserved = 0; // Assuming that no drive here.
-
-			// (I) Select Drive:
-			ide_write(i, ATA_REG_HDDEVSEL, 0xA0 | (j << 4)); // Select Drive.
-			sleep(1);					 // Wait 1ms for drive select to work.
-
-			// (II) Send ATA Identify Command:
-			ide_write(i, ATA_REG_COMMAND, ATA_CMD_IDENTIFY);
-			sleep(1); // This function should be implemented in your OS. which waits for 1 ms.
-				     // it is based on System Timer Device Driver.
-
-			// (III) Polling:
-			if (ide_read(i, ATA_REG_STATUS) == 0)
-				continue; // If Status = 0, No Device.
-
-			while (1) {
-				status = ide_read(i, ATA_REG_STATUS);
-				if ((status & ATA_SR_ERR)) {
-					err = 1;
-					break;
-				} // If Err, Device is not ATA.
-				if (!(status & ATA_SR_BSY) && (status & ATA_SR_DRQ))
-					break; // Everything is right.
-			}
-
-			// (IV) Probe for ATAPI Devices:
-			if (err != 0) {
-				unsigned char cl = ide_read(i, ATA_REG_LBA1);
-				unsigned char ch = ide_read(i, ATA_REG_LBA2);
-
-				if (cl == 0x14 && ch == 0xEB)
-					type = IDE_ATAPI;
-				else if (cl == 0x69 && ch == 0x96)
-					type = IDE_ATAPI;
-				else
-					continue; // Unknown Type (may not be a device).
-
-				ide_write(i, ATA_REG_COMMAND, ATA_CMD_IDENTIFY_PACKET);
-				sleep(1);
-			}
-
-			// (V) Read Identification Space of the Device:
-			ide_read_buffer(i, ATA_REG_DATA, (unsigned int)ide_buf, 128);
-
-			// (VI) Read Device Parameters:
-			ide_devices[count].Reserved = 1;
-			ide_devices[count].Type = type;
-			ide_devices[count].Channel = i;
-			ide_devices[count].Drive = j;
-			ide_devices[count].Signature = *((unsigned short *)(ide_buf + ATA_IDENT_DEVICETYPE));
-			ide_devices[count].Capabilities = *((unsigned short *)(ide_buf + ATA_IDENT_CAPABILITIES));
-			ide_devices[count].CommandSets = *((unsigned int *)(ide_buf + ATA_IDENT_COMMANDSETS));
-			ide_devices[count].udma = ata_detect_dma();
-			
-			/*
-			 * ok, so the cable emulated by qemu seam to not be 80pins, wich should indicate that using udma > 2 is not a great idea
-			 * but udma 6 is enable on the drive so... maybe that why dma is acting wired ? but does is realy matter in a vm ?
-			 * i need to invastigate that crap...
-			 * for referance heree, cable 0x1020 and ubma: 0x2020 dma shiting the bed
-			 * on maria: cable: 0x020, udma: 0x2020 and dma working
-			 * so it's realy cable related ? WTF
-			 */
-
-			// (VII) Get Size:
-			if (ide_devices[count].CommandSets & (1 << 26)) {
-				// Device uses 48-Bit Addressing:
-				ide_devices[count].Size = *((unsigned int *)(ide_buf + ATA_IDENT_MAX_LBA_EXT));
-			} else {
-				// Device uses CHS or 28-bit Addressing:
-				ide_devices[count].Size = *((unsigned int *)(ide_buf + ATA_IDENT_MAX_LBA));
-			}
-
-			// (VIII) String indicates model of device (like Western Digital HDD and SONY DVD-RW...):
-			for (int k = 0; k < 40; k += 2) {
-				ide_devices[count].Model[k] = ide_buf[ATA_IDENT_MODEL + k + 1];
-				ide_devices[count].Model[k + 1] = ide_buf[ATA_IDENT_MODEL + k];
-			}
-			ide_devices[count].Model[40] = 0; // Terminate String.
-
-			count++;
-		}
-	}
-
-	// 4- Print Summary:
-	for (int i = 0; i < 4; i++)
-		if (ide_devices[i].Reserved == 1) {
-			kprintf(" Found %s Drive %1dGB - %s\n", (const char *[]){"ATA", "ATAPI"}[ide_devices[i].Type],
-				  ide_devices[i].Size / 1024 / 1024 / 2, ide_devices[i].Model);
-			kprintf("  Capabilites: 0x%4h; CommandSet: 0x%8h; UDMA: 0x%4h\n", ide_devices[i].Capabilities, ide_devices[i].CommandSets, ide_devices[i].udma);
-
-			if (ide_devices[i].Type == 0) {
-				fat_init(i);
-			}
-		}
-}
 
 static unsigned char ide_read(unsigned char channel, unsigned char reg) {
 	//kprintf("ide_read: reg: Ox%2h\n", reg);
@@ -513,8 +372,10 @@ static uint8_t ide_polling(uint8_t channel, uint8_t advanced_check) {
 }
 
 
-uint8_t ide_read_sectors(uint8_t drive, uint8_t numsects, uint32_t lba, void *edi) {
+static int ide_read_sectors(void *bdev, uint8_t numsects, uint32_t lba, void *edi) {
 	// 1: Check if the drive presents:
+	uint32_t drive = (uint32_t)bdev;
+
 	if (drive > 3 || ide_devices[drive].Reserved == 0) {
 		return 1;
 	}
@@ -587,4 +448,149 @@ static enum ata_dma_support ata_detect_dma() {
 				return ATA_DMA_NO;
 		}
 	}
+}
+
+struct bdev_operation ata_ops = {
+	.read = ide_read_sectors,
+};
+
+void ata_init(struct pci_header *head, uint8_t bus, uint8_t slot, uint8_t fonc) {
+	uint32_t bar0, bar1, bar2, bar3, bar4;
+
+	kprintf("prog_if: 0x%4h; status: 0x%4h; bar4: 0x%8h\n", head->prog_if, head->status, head->specific.type0.bar4);
+
+	if ((head->prog_if & 1) == 0) {
+		bar0 = 0x1F0;
+		bar1 = 0x3F6;
+	} else {
+		bar0 = head->specific.type0.bar0;
+		bar1 = head->specific.type0.bar1;
+	}
+
+	if ((head->prog_if & 4) == 0) {
+		bar2 = 0x170;
+		bar3 = 0x376;
+	} else {
+		bar2 = head->specific.type0.bar2;
+		bar3 = head->specific.type0.bar3;
+	}
+
+	bar4 = head->specific.type0.bar4;
+
+	// 1- Detect I/O Ports which interface IDE Controller:
+	channels[ATA_PRIMARY].base = bar0 & 0xFFFFFFFC;
+	channels[ATA_PRIMARY].ctrl = bar1 & 0xFFFFFFFC;
+	channels[ATA_SECONDARY].base = bar2 & 0xFFFFFFFC;
+	channels[ATA_SECONDARY].ctrl = bar3 & 0xFFFFFFFC;
+	channels[ATA_PRIMARY].bmide = (bar4 & 0xFFFFFFFC) + 0;   // Bus Master IDE
+	channels[ATA_SECONDARY].bmide = (bar4 & 0xFFFFFFFC) + 8; // Bus Master IDE
+	channels[ATA_PRIMARY].bus = channels[ATA_SECONDARY].bus = bus;
+	channels[ATA_PRIMARY].slot = channels[ATA_SECONDARY].slot = fonc;
+	channels[ATA_PRIMARY].fonc = channels[ATA_SECONDARY].fonc = fonc;
+
+	// 2- Disable IRQs:
+	//ide_write(ATA_PRIMARY, ATA_REG_CONTROL, 2);
+	//ide_write(ATA_SECONDARY, ATA_REG_CONTROL, 2);
+	register_interrupt(0x2e, ide_int, 0);
+	register_interrupt(0x2f, ide_int, 0);
+
+	// 3- Detect ATA-ATAPI Devices:
+	int count = 0;
+	for (int i = 0; i < 2; i++) {
+		for (int j = 0; j < 2; j++) {
+			unsigned char err = 0, type = IDE_ATA, status;
+			ide_devices[count].Reserved = 0; // Assuming that no drive here.
+
+			// (I) Select Drive:
+			ide_write(i, ATA_REG_HDDEVSEL, 0xA0 | (j << 4)); // Select Drive.
+			sleep(1);					 // Wait 1ms for drive select to work.
+
+			// (II) Send ATA Identify Command:
+			ide_write(i, ATA_REG_COMMAND, ATA_CMD_IDENTIFY);
+			sleep(1); // This function should be implemented in your OS. which waits for 1 ms.
+				     // it is based on System Timer Device Driver.
+
+			// (III) Polling:
+			if (ide_read(i, ATA_REG_STATUS) == 0)
+				continue; // If Status = 0, No Device.
+
+			while (1) {
+				status = ide_read(i, ATA_REG_STATUS);
+				if ((status & ATA_SR_ERR)) {
+					err = 1;
+					break;
+				} // If Err, Device is not ATA.
+				if (!(status & ATA_SR_BSY) && (status & ATA_SR_DRQ))
+					break; // Everything is right.
+			}
+
+			// (IV) Probe for ATAPI Devices:
+			if (err != 0) {
+				unsigned char cl = ide_read(i, ATA_REG_LBA1);
+				unsigned char ch = ide_read(i, ATA_REG_LBA2);
+
+				if (cl == 0x14 && ch == 0xEB)
+					type = IDE_ATAPI;
+				else if (cl == 0x69 && ch == 0x96)
+					type = IDE_ATAPI;
+				else
+					continue; // Unknown Type (may not be a device).
+
+				ide_write(i, ATA_REG_COMMAND, ATA_CMD_IDENTIFY_PACKET);
+				sleep(1);
+			}
+
+			// (V) Read Identification Space of the Device:
+			ide_read_buffer(i, ATA_REG_DATA, (unsigned int)ide_buf, 128);
+
+			// (VI) Read Device Parameters:
+			ide_devices[count].Reserved = 1;
+			ide_devices[count].Type = type;
+			ide_devices[count].Channel = i;
+			ide_devices[count].Drive = j;
+			ide_devices[count].Signature = *((unsigned short *)(ide_buf + ATA_IDENT_DEVICETYPE));
+			ide_devices[count].Capabilities = *((unsigned short *)(ide_buf + ATA_IDENT_CAPABILITIES));
+			ide_devices[count].CommandSets = *((unsigned int *)(ide_buf + ATA_IDENT_COMMANDSETS));
+			ide_devices[count].udma = ata_detect_dma();
+			
+			/*
+			 * ok, so the cable emulated by qemu seam to not be 80pins, wich should indicate that using udma > 2 is not a great idea
+			 * but udma 6 is enable on the drive so... maybe that why dma is acting wired ? but does is realy matter in a vm ?
+			 * i need to invastigate that crap...
+			 * for referance heree, cable 0x1020 and ubma: 0x2020 dma shiting the bed
+			 * on maria: cable: 0x020, udma: 0x2020 and dma working
+			 * so it's realy cable related ? WTF
+			 */
+
+			// (VII) Get Size:
+			if (ide_devices[count].CommandSets & (1 << 26)) {
+				// Device uses 48-Bit Addressing:
+				ide_devices[count].Size = *((unsigned int *)(ide_buf + ATA_IDENT_MAX_LBA_EXT));
+			} else {
+				// Device uses CHS or 28-bit Addressing:
+				ide_devices[count].Size = *((unsigned int *)(ide_buf + ATA_IDENT_MAX_LBA));
+			}
+
+			// (VIII) String indicates model of device (like Western Digital HDD and SONY DVD-RW...):
+			for (int k = 0; k < 40; k += 2) {
+				ide_devices[count].Model[k] = ide_buf[ATA_IDENT_MODEL + k + 1];
+				ide_devices[count].Model[k + 1] = ide_buf[ATA_IDENT_MODEL + k];
+			}
+			ide_devices[count].Model[40] = 0; // Terminate String.
+
+			count++;
+		}
+	}
+
+	// 4- Print Summary:
+	for (int i = 0; i < 4; i++)
+		if (ide_devices[i].Reserved == 1) {
+			kprintf(" Found %s Drive %1dGB - %s\n", (const char *[]){"ATA", "ATAPI"}[ide_devices[i].Type],
+				  ide_devices[i].Size / 1024 / 1024 / 2, ide_devices[i].Model);
+			kprintf("  Capabilites: 0x%4h; CommandSet: 0x%8h; UDMA: 0x%4h\n", ide_devices[i].Capabilities, ide_devices[i].CommandSets, ide_devices[i].udma);
+
+			if (ide_devices[i].Type == 0) {
+				bdev_register(&ata_ops, (void *)i);
+			}
+		}
 }

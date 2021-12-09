@@ -1,4 +1,4 @@
-#include "ata.h"
+#include "bdev.h"
 #include "stdtype.h"
 #include "io.h"
 #include "vmm.h"
@@ -307,7 +307,7 @@ static void page_fault_interrupt_handler(unsigned int interrupt, void *ext) {
         kprintf("base: 0x%8h; size: %d;\n",  vm->base, vm->size);
 page_fault:
         kprintf("PAGE FAULT at 0x%8h\n", faulty_address);
-        dump_vm_map();
+        //dump_vm_map();
         asm volatile ("hlt");
         return;
     }
@@ -346,7 +346,7 @@ page_fault:
                 break;
             }
 
-            ide_read_sectors(vm->sec->fat->device, 1, lba, vm->base + i * 512);
+            bdev_read(vm->sec->fat->device, 1, lba, vm->base + i * 512);
         }
     }
 

@@ -2,6 +2,7 @@
 #include "stdtype.h"
 #include "pci.h"
 #include "ata.h"
+#include "virtio_blk.h"
 
 #define PCI_BSFO_TO_ADDRESS(bus, slot, func, offset)                                                                   \
 	(((uint32_t)((uint32_t)(bus) << 16) | ((uint32_t)(slot) << 11) | (uint32_t)(func) << 8) |                        \
@@ -21,6 +22,7 @@ struct pci_driver {
 
 struct pci_driver pci_drivers[] = {
     {0x01, 0x01, ata_init},
+	{0x01, 0x00, virtio_blk_init},
 };
 
 uint32_t pci_drivers_sz = sizeof(pci_drivers) / sizeof(struct pci_driver);
