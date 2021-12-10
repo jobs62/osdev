@@ -66,6 +66,9 @@ enum bdev_payload_status fat_init(uint8_t drive) {
 	fs.fat_type = FAT_TYPE_NONE;
 	uint8_t err;
 
+	kprintf("fat init drive %1d\n", drive);
+	fs.device = drive;
+
 	if ((err = bdev_read(drive, 1, 0, &bpb)) != 0) {
 		kprintf("ide_read_sectore error (%d)\n", err);
 		return BDEV_ERROR;
@@ -168,6 +171,11 @@ involid_fat_header:
 			fs.fat_root_dir_size = 0; //Size of root dir in illimited, and is only limited by FAT EoF
 			break;
 	}
+
+	kprintf("bpb.common.BPB_RsvdSecCnt: 0x%8h\n", bpb.common.BPB_RsvdSecCnt);
+	kprintf("bpb.common.BPB_NumFATs: 0x%2h\n", bpb.common.BPB_NumFATs);
+	kprintf("bpb.common.BPB_FATz16: 0x%8h\n", bpb.common.BPB_FATz16);
+	kprintf("root dir sector : 0x%8h\n", fs.fat_root_dir_sector);
 
 	return BDEV_SUCCESS;
 }
@@ -376,6 +384,8 @@ int fat_name_cmp(unsigned char *left, char *rigth) {
 	memcpy(buffer, left, 11);
 	buffer[8] = '\0';
 	char *p = buffer;
+
+	//kprintf("left: %s; right: %s\n", p, q);
 
 	//thats a gross simlification of fat naming
 	while(*p == *q) {

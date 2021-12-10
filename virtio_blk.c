@@ -67,7 +67,7 @@ static int virtio_blk_read(void *bdev, uint32_t numsect, uint32_t lba, void *edi
     header.sector = lba;
     mfence();
 
-    kprintf("head 0x%8h; data: 0x%8h; status 0x%8h\n", get_physaddr(&header), get_physaddr(edi), get_physaddr(&status));
+    kprintf("numsect: %1d; lba: 0x%8h\n", numsect, lba);
 
     blk->queue.desc[0].address = get_physaddr(&header);
     blk->queue.desc[0].length = 16;
@@ -97,6 +97,8 @@ static int virtio_blk_read(void *bdev, uint32_t numsect, uint32_t lba, void *edi
             break;
         }
     }
+
+    kprintf("read finished\n");
 
     return status;
 }

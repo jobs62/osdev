@@ -1,17 +1,16 @@
 #include "bdev.h"
 #include "fat.h"
-
+#include "mbr.h"
 
 struct {
     uint8_t reserved;
     struct bdev_operation *ops;
     void *bdev;
-    uint32_t name[11];
-
 } bdev[8];
 
 typedef enum bdev_payload_status (*bdev_payload_init)(uint8_t device);
 bdev_payload_init payloads[] = {
+    mbr_init,
     fat_init,
 };
 
@@ -29,12 +28,19 @@ int bdev_register(struct bdev_operation *ops, void *ext) {
             bdev[i].bdev = ext;
 
             for(uint32_t j = 0; j < payloads_sz; j++) {
-                if (payloads[j](i) < BDEV_FORWARD) {
-                    break;
+                switch(payloads[j](i)) {
+                    case BDEV_SUCCESS:
+                        kprintf("fsdfs\n");
+                        return i;
+                    case BDEV_ERROR:
+                        kprintf("BDEv_ERROR\n");
+                        return i;
+                    default:
+                        break;
                 }
             }
 
-            return i;
+            return -2;
         }
     }
 
