@@ -23,7 +23,7 @@ struct vm_entry {
     void *base;
     uint32_t size;
     uint32_t flags;
-    struct fat_sector_itearator *sec;
+    struct file *file;
 };
 
 struct vm_entry vm_map[1024]; //that should be in task struct
@@ -189,7 +189,7 @@ void vmm_init() {
     register_interrupt(0xE, page_fault_interrupt_handler, 0);
 }
 
-void *add_vm_entry(void *hint, uint32_t size, uint32_t flags, struct fat_sector_itearator *sec) {
+void *add_vm_entry(void *hint, uint32_t size, uint32_t flags, struct file *file) {
     //check flags for idotique things
     if ((flags & VM_MAP_USER) && (flags & VM_MAP_KERNEL)) {
         return 0;
@@ -203,9 +203,11 @@ void *add_vm_entry(void *hint, uint32_t size, uint32_t flags, struct fat_sector_
         return 0;
     }
 
-    if ((flags & VM_MAP_FILE) && sec == (void*)0) {
+    if ((flags & VM_MAP_FILE) && file == (void*)0) {
         return 0;
     }
+
+    hint = (virtaddr_t)((uint32_t)hint & ~FIRST_12BITS_MASK);
 
     uint32_t best_hint;
     uint32_t best_lost_space;
@@ -234,7 +236,7 @@ fit_with_hint:
             vm_map[i].base = hint;
             vm_map[i].size = size;
             vm_map[i].flags = flags;
-            vm_map[i].sec = sec;
+            vm_map[i].file = file;
             vm_map_size++;
 
             return (vm_map[i].base);
@@ -338,16 +340,12 @@ page_fault:
     }
 
     if (vm->flags & VM_MAP_FILE) {
-        uint32_t lba;
-        for (uint8_t i = 0; i < 4096 / 512; i++) {
-            kprintf("penich\n");
-            lba = fat_sector_iterator_next(vm->sec); //TODO: FIXME: this is not correct since it doesnt seek into the file, beacause i dont have de seek fs...
-            if (lba == 0) {
-                break;
-            }
-
-            bdev_read(vm->sec->fat->device, 1, lba, vm->base + i * 512);
+        kprintf("seek\n");
+        if (fat_seek(vm->file, (faulty_address - vm->base) & ~FIRST_12BITS_MASK, SEEK_SET) != 0) {
+            kprintf("fat_seek error\n");
         }
+        kprintf("read\n");
+        fat_read(vm->file, (virtaddr_t)((uint32_t)faulty_address & ~FIRST_12BITS_MASK), PAGE_SIZE);
     }
 
     map_change_permission(faulty_address, flags);

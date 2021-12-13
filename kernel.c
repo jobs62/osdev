@@ -124,13 +124,15 @@ void kmain(unsigned long magic, unsigned long addr) {
     pci_scan_bus(0);
 
     struct fat_sector_itearator sec;
+    struct file file;
     char *path[] = { "HELLO", (void*)0 };
     if (fat_open_from_path(&sec, path) != 0) {
         kprintf("Oh! the shit the bed\n");
         return;
     }
 
-    char *vmfile = add_vm_entry(5000, PAGE_SIZE, VM_MAP_FILE | VM_MAP_KERNEL, &sec);
+    fat_open(&file, &sec);
+    char *vmfile = add_vm_entry(5000, PAGE_SIZE, VM_MAP_FILE | VM_MAP_KERNEL, &file);
     if (vmfile == 0) {
         kprintf("Oh! the shit the bed2\n");
         return;

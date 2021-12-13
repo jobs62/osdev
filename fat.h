@@ -53,6 +53,15 @@ struct fat_directory_iterator{
 	uint8_t eoi;
 };
 
+struct file {
+	struct fat_sector_itearator inital_iter;
+	struct fat_sector_itearator iter;
+	uint32_t offset;
+};
+
+#define SEEK_SET 0
+#define SEEK_CUR 1
+
 enum bdev_payload_status fat_init(uint8_t drive);
 uint32_t fat_sector_iterator_next(struct fat_sector_itearator *iter);
 uint32_t fat_sector_iterator_root_dir(struct fat_sector_itearator *iter, struct fat_fs *fat);
@@ -61,6 +70,9 @@ void fat_directory_iterator(struct fat_directory_iterator *iter, struct fat_dire
 struct fat_directory_entry *fat_directory_iterator_next(struct fat_directory_iterator *iter);
 void fat_sector_itearator(struct fat_sector_itearator *iter, struct fat_directory_entry *dir, struct fat_fs *fat);
 int fat_open_from_path(struct fat_sector_itearator *iter, char *path[]);
+int fat_read(struct file *file, void *buffer, uint32_t size);
+int fat_seek(struct file *file, uint32_t offset, uint8_t whence);
+int fat_open(struct file *file, struct fat_sector_itearator *iter);
 
 inline void fat_sector_itearator_copy(struct fat_sector_itearator *dst, struct fat_sector_itearator *src) {
 	memcpy(dst, src, sizeof(struct fat_sector_itearator));
