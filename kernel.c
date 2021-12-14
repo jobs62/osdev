@@ -55,6 +55,36 @@ extern void switch_to_user_mode(void);
 
 extern struct fat_fs fs;
 
+struct elf_header {
+    uint8_t ident[16];
+    uint16_t type;
+    uint16_t machine;
+    uint32_t version;
+    uint32_t entry;
+    uint32_t phoff;
+    uint32_t shoff;
+    uint32_t flags;
+    uint16_t ehsize;
+    uint16_t phentries;
+    uint16_t phnum;
+    uint16_t shentsize;
+    uint16_t shnum;
+    uint16_t shstrndx;
+} __attribute__((packed));;
+
+struct elf_section {
+    uint32_t name;
+    uint32_t type;
+    uint32_t flags;
+    uint32_t addr;
+    uint32_t offset;
+    uint32_t size;
+    uint32_t link;
+    uint32_t info;
+    uint32_t addralign;
+    uint32_t entsize;
+} __attribute__((packed));
+
 void kmain(unsigned long magic, unsigned long addr) {
     memset(vidptr, 0, ROW * COL * 2);
     bitmap_clear();
@@ -125,21 +155,44 @@ void kmain(unsigned long magic, unsigned long addr) {
 
     struct fat_sector_itearator sec;
     struct file file;
-    char *path[] = { "HELLO", (void*)0 };
+    char *path[] = { "INIT", (void*)0 };
     if (fat_open_from_path(&sec, path) != 0) {
         kprintf("Oh! the shit the bed\n");
         return;
     }
 
     fat_open(&file, &sec);
-    char *vmfile = add_vm_entry(5000, PAGE_SIZE, VM_MAP_FILE | VM_MAP_KERNEL, &file);
-    if (vmfile == 0) {
-        kprintf("Oh! the shit the bed2\n");
+    struct elf_header elfhead;
+    fat_read(&file, &elfhead, sizeof(struct elf_header));
+    if (elfhead.ident[0] != 0x7f ||
+        elfhead.ident[1] != 'E' ||
+        elfhead.ident[2] != 'L' ||
+        elfhead.ident[3] != 'F' ||
+        elfhead.ident[4] != 1 ||
+        elfhead.ident[5] != 1) {
+            kprintf("ELF header error\n");
+   } else {
+       kprintf("ELF header ok\n");
+   }
+
+    if (sizeof(struct elf_section) != elfhead.shentsize) {
+        kprintf("shentsize error %1d != %1d\n", sizeof(struct elf_section), elfhead.shentsize);
         return;
     }
 
-    kprintf("file content: %s\n", vmfile);
-    kprintf("surviver flag\n");
+    if (elfhead.shoff != 0) {
+        struct elf_section section;
+        fat_seek(&file, elfhead.shoff, SEEK_SET);
+        kprintf("offset: 0x%8h; fileoffset: 0x%8h; sector: 0x%8h; shnum: %1d\n", elfhead.shoff, file.offset, file.iter.current_sector, elfhead.shnum);
+        for (uint16_t i = 0; i < elfhead.shnum; i++) {
+            fat_read(&file, &section, sizeof(struct elf_section));
+            
+            kprintf("address: 0x%8h; size: %1d: offset: %1d\n", section.addr, section.size, section.offset);
+            
+        }
+    } else {
+        kprintf("No sections found\n");
+    }
 
     return;
 

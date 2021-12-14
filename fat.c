@@ -439,7 +439,7 @@ int fat_seek(struct file *file, uint32_t offset, uint8_t whence) {
 	uint32_t new_offset = file->offset + offset;
 
 	for (uint32_t i = 0; i < (new_offset / 512) - (file->offset / 512); i++) {
-		if (fat_sector_iterator_next(&file->iter) != 0) {
+		if (fat_sector_iterator_next(&file->iter) == 0) {
 			kprintf("fat_seek: fat_iterator_error\n");
 			return (1);
 		}
@@ -454,7 +454,7 @@ int fat_read(struct file *file, void *buffer, uint32_t size) {
 	int e, i;
 	uint32_t sec;
 
-	kprintf("read last sec\noffset: %1d: size: %1d; buffer: 0x%8h\n", file->offset, size, buffer);
+	//kprintf("read last sec\noffset: %1d: size: %1d; buffer: 0x%8h\n", file->offset, size, buffer);
 	i = 0;
 	if ((e = bdev_read(file->iter.fat->device, 1, file->iter.current_sector, tmp_buffer)) != 0) {
 		return e;
@@ -468,7 +468,7 @@ int fat_read(struct file *file, void *buffer, uint32_t size) {
 	}
 	i = e;
 
-	for (; i < size; i += 512) {
+	for (; (i / 512) < (size / 512); i += 512) {
 		sec = fat_sector_iterator_next(&file->iter);
 		if (sec == 0) {
 			return (i);
@@ -493,10 +493,7 @@ int fat_read(struct file *file, void *buffer, uint32_t size) {
 		return e;
 	}
 
-	kprintf("c'est le memcpy ?");
 	memcpy(&buffer[i], tmp_buffer, size - i);
-	kprintf("non ! \n");
-
 	file->offset += size;
 
 	return size;
