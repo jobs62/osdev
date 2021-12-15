@@ -65,24 +65,22 @@ struct elf_header {
     uint32_t shoff;
     uint32_t flags;
     uint16_t ehsize;
-    uint16_t phentries;
+    uint16_t phentsize;
     uint16_t phnum;
     uint16_t shentsize;
     uint16_t shnum;
     uint16_t shstrndx;
 } __attribute__((packed));;
 
-struct elf_section {
-    uint32_t name;
+struct elf_phrd {
     uint32_t type;
-    uint32_t flags;
-    uint32_t addr;
     uint32_t offset;
-    uint32_t size;
-    uint32_t link;
-    uint32_t info;
-    uint32_t addralign;
-    uint32_t entsize;
+    uint32_t vaddr;
+    uint32_t paddr;
+    uint32_t filesz;
+    uint32_t memsz;
+    uint32_t flags;
+    uint32_t align;
 } __attribute__((packed));
 
 void kmain(unsigned long magic, unsigned long addr) {
@@ -175,33 +173,30 @@ void kmain(unsigned long magic, unsigned long addr) {
        kprintf("ELF header ok\n");
    }
 
-    if (sizeof(struct elf_section) != elfhead.shentsize) {
-        kprintf("shentsize error %1d != %1d\n", sizeof(struct elf_section), elfhead.shentsize);
+    if (sizeof(struct elf_phrd) != elfhead.phentsize) {
+        kprintf("program heade size issue (%1d != %1d)\n", sizeof(struct elf_phrd), elfhead.phentsize);
         return;
     }
 
-    if (elfhead.shoff != 0) {
-        struct elf_section section;
-        fat_seek(&file, elfhead.shoff, SEEK_SET);
-        kprintf("offset: 0x%8h; fileoffset: 0x%8h; sector: 0x%8h; shnum: %1d\n", elfhead.shoff, file.offset, file.iter.current_sector, elfhead.shnum);
-        for (uint16_t i = 0; i < elfhead.shnum; i++) {
-            fat_read(&file, &section, sizeof(struct elf_section));
-            
-            kprintf("address: 0x%8h; size: %1d: offset: %1d\n", section.addr, section.size, section.offset);
-            
+    struct elf_phrd section;
+    fat_seek(&file, elfhead.phoff, SEEK_SET);
+    kprintf("offset: 0x%8h; fileoffset: 0x%8h; sector: 0x%8h; phnum: %1d; entry: 0x%8h\n", elfhead.shoff, file.offset, file.iter.current_sector, elfhead.phnum, elfhead.entry);
+    for (uint16_t i = 0; i < elfhead.phnum; i++) {
+        fat_read(&file, &section, sizeof(struct elf_phrd));
+
+        if (section.type == 1) {
+            kprintf("address: 0x%8h; size: %1d: offset: %1d\n", section.vaddr, section.memsz, section.offset);
+            if (add_vm_entry(section.vaddr, section.memsz, VM_MAP_FILE | VM_MAP_WRITE | VM_MAP_USER, &file, section.offset) != section.vaddr) {
+                kprintf("unable to map to requeired location. aborting\n");
+                return;
+            }
         }
-    } else {
-        kprintf("No sections found\n");
     }
+    
+    kprintf("entry: 0x%8h\n", *(uint32_t *)section.vaddr);
+    *((uint32_t *)0x0000203c) = 0;
 
-    return;
-
-    /* oh boy */
-    int *maptest = (int *)malloc(sizeof(int) * 1000);
-    maptest[300] = 8;
-    free(maptest);
-
-    prepare_switch_to_usermode();
+    switch_to_user_mode();
 }
 
 #define HEX_BASE 16
@@ -332,7 +327,7 @@ void prepare_switch_to_usermode() {
     unsigned int *user_page_directory = malloc(PAGE_SIZE);
     unsigned int *user_kernel_table_directory = malloc(PAGE_SIZE);
     unsigned int *user_stack_table_directory = malloc(PAGE_SIZE);
-    unsigned int *user_stack_limit =  add_vm_entry(0x1000, PAGE_SIZE, VM_MAP_ANONYMOUS | VM_MAP_USER | VM_MAP_WRITE | VM_MAP_USER, 0);
+    unsigned int *user_stack_limit =  add_vm_entry(0x1000, PAGE_SIZE, VM_MAP_ANONYMOUS | VM_MAP_USER | VM_MAP_WRITE | VM_MAP_USER, 0, 0);
     unsigned int *kernel_stack_limit =  malloc(PAGE_SIZE) + PAGE_SIZE - 1;
 
     kprintf("user_page_directory: 0x%8h; user_stack_table_directory: 0x%8h; user_stack_limit: 0x%8h\n",
@@ -371,7 +366,7 @@ void prepare_switch_to_usermode() {
 
     //asm volatile("mov %0, %%cr3" : : "r"(get_physaddr(user_page_directory)));
 
-    //switch_to_user_mode();
+    //
 }
 
 extern unsigned int tick;

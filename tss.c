@@ -34,7 +34,7 @@ struct tss_entry {
 
 struct tss_entry tss;
 
-void write_tss(unsigned short ss0, unsigned short esp0) {
+void write_tss(unsigned short ss0, unsigned int esp0) {
     gdt_set_gate(5, (unsigned int)&tss, (unsigned int)&tss + sizeof(struct tss_entry), 0xE9, 0x00);
 
     memset(&tss, 0, sizeof(struct tss_entry));

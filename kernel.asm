@@ -104,6 +104,7 @@ tss_flush:
 
 
 global switch_to_user_mode
+global stack_space
 switch_to_user_mode:
 	cli ;critical code section
 	
@@ -116,13 +117,13 @@ switch_to_user_mode:
 
 	;mov eax, esp
 	push 0x23
-	push 0xbfffffff
-	pushf
-	pop eax
+	push 0x00001000
+	pushf ;some tric to enable interupt back
+	pop eax 
 	or eax, 0x200
 	push eax
 	push 0x1b
-	push .1
+	push 0x00000000
 	iret
 .1:
 	;hlt

@@ -1,7 +1,8 @@
 
 extern void load_gdt(void);
 extern void tss_flush(void);
-extern void write_tss(unsigned short ss0, unsigned short esp0);
+extern void write_tss(unsigned short ss0, unsigned int esp0);
+extern void stack_space(void);
 
 struct gdt_entry {
     unsigned short limit_low;           // The lower 16 bits of the limit.
@@ -43,7 +44,7 @@ void setup_gdt() {
     gdt_set_gate(GDT_DS_KERN, 0, 0xFFFFFFFF, 0x92, 0xCF); // Data segment 0x10
     gdt_set_gate(GDT_CS_USER, 0, 0xFFFFFFFF, 0xFA, 0xCF); // Code segment 0x18
     gdt_set_gate(GDT_DS_USER, 0, 0xFFFFFFFF, 0xF2, 0xCF); // Data segment 0x20
-    write_tss(0x10, 0xbfffffff); //TODO: i guess i need a real stack lol
+    write_tss(0x10, (unsigned int)&stack_space); //TODO: i guess i need a real stack lol
 
     gdt_base.base = (unsigned int)&gdt_entries;
     gdt_base.limit = sizeof(struct gdt_entry) * GDT_ENTRIES_SZ - 1;
