@@ -85,6 +85,7 @@ extern void interrupt_handler_44(void);
 extern void interrupt_handler_45(void);
 extern void interrupt_handler_46(void);
 extern void interrupt_handler_47(void);
+extern void interrupt_handler_128(void);
 
 struct inter_holder {
     unsigned char present;
@@ -108,6 +109,7 @@ void PIC_remap(int offset1, int offset2);
 #define PIC_EOI 0x20 //End of interrupt command
 
 unsigned int tick = 0;
+extern int put(char c);
 
 void interrupt_handler(struct cpu_state cpu, unsigned int interrupt, struct stack_state stack) {
     if (interrupt == 0x20) {
@@ -121,6 +123,19 @@ void interrupt_handler(struct cpu_state cpu, unsigned int interrupt, struct stac
 
     if (interrupt < 48 && int_reg[interrupt].present == 1) {
         int_reg[interrupt].fnc(interrupt, int_reg[interrupt].ext);
+    } else if(interrupt == 128) {
+        //syscalls
+        switch (cpu.eax) {
+            case 42: //write     
+                for (unsigned int i = 0; i < cpu.ecx; i++) {
+                    put(((char *)cpu.ebx)[i]);
+                }
+                cpu.eax = 0; //return code
+                break;
+            default:
+                kprintf("unknown syscall !!\n");
+                break;
+        }
     } else {
         kprintf("CS=0x%8h, int_no=0x%8h, err_code=0x%8h\n", stack.cs, interrupt, stack.error_code);
         kprintf("EDI=0x%8h, ESI=0x%8h, EBP=0x%8h\n", cpu.edi, cpu.esi, cpu.ebp);
@@ -136,7 +151,7 @@ void idt_set_gate(unsigned char num, unsigned int base, unsigned short sel, unsi
     idt_entries[num].base_hi = (base >> 16) & 0xFFFF;
     idt_entries[num].sel = sel;
     idt_entries[num].always0 = 0;
-    idt_entries[num].flags = flags;
+    idt_entries[num].flags = flags | 0x60;
 }
 
 #define PIC1_START_INTERRUPT 0x20
@@ -173,7 +188,7 @@ void setup_idt() {
     idt_set_gate(25, (unsigned int)&interrupt_handler_25, 0x08, 0x8E);     
     idt_set_gate(26, (unsigned int)&interrupt_handler_26, 0x08, 0x8E);     
     idt_set_gate(27, (unsigned int)&interrupt_handler_27, 0x08, 0x8E);     
-    idt_set_gate(28, (unsigned int)&interrupt_handler_28, 0x08, 0x8E);     
+    idt_set_gate(28, (unsigned int)&interrupt_handler_28, 0x08, 0x8E); 
     idt_set_gate(29, (unsigned int)&interrupt_handler_29, 0x08, 0x8E);   
     idt_set_gate(30, (unsigned int)&interrupt_handler_30, 0x08, 0x8E);  
     idt_set_gate(31, (unsigned int)&interrupt_handler_31, 0x08, 0x8E);
@@ -193,6 +208,7 @@ void setup_idt() {
     idt_set_gate(45, (unsigned int)&interrupt_handler_45, 0x08, 0x8E);
     idt_set_gate(46, (unsigned int)&interrupt_handler_46, 0x08, 0x8E);
     idt_set_gate(47, (unsigned int)&interrupt_handler_47, 0x08, 0x8E);
+    idt_set_gate(128, (unsigned int)&interrupt_handler_128, 0x08, 0x8E);
 
     idt_base.base = (unsigned int)&idt_entries;
     idt_base.limit = sizeof(struct idt_entry) * IDT_TABLE_SZ - 1;
@@ -254,8 +270,6 @@ void PIC_remap(int offset1, int offset2) {
 
     outb(PIC1_DATA, a1); //restor saved masks
     outb(PIC2_DATA, a2);
-
-
 }
 
 void register_interrupt(unsigned int intno, interrupt_type fnc, void *ext) {

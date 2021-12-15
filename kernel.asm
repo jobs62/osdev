@@ -123,7 +123,7 @@ switch_to_user_mode:
 	or eax, 0x200
 	push eax
 	push 0x1b
-	push 0x00000000
+	push 0x00000020
 	iret
 .1:
 	;hlt
