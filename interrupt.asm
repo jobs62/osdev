@@ -20,7 +20,9 @@ common_interrupt_handler:
 	pusha ; Pushes edi, esi, ebp, esp, ebx, edx, ecx, eax
 
 	; Call C handler
+	push esp
 	call interrupt_handler
+	add esp, 4 ;clean up the stack
 
 	; Restore registers
 	popa ; Pop edi, esi, ebp, esp, ebx, edx, ecx, eax

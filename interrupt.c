@@ -5,7 +5,7 @@ struct cpu_state {
     unsigned int edi;
     unsigned int esi;
     unsigned int ebp;
-    unsigned int esp;
+    unsigned int esp; //pushed by pusha but ignored by popa
     unsigned int ebx;
     unsigned int edx;
     unsigned int ecx;
@@ -17,6 +17,8 @@ struct stack_state {
     unsigned int eip;
     unsigned int cs;
     unsigned int eflags;
+    //unsigned int esp; //only pushed/poped if ring3 -> ring0 int
+    //unsigned int ss; //only pushed/poped if ring3 -> ring0 int
 } __attribute__((packed));
 
 struct idt_entry {
@@ -111,39 +113,44 @@ void PIC_remap(int offset1, int offset2);
 unsigned int tick = 0;
 extern int put(char c);
 
-void interrupt_handler(struct cpu_state cpu, unsigned int interrupt, struct stack_state stack) {
-    if (interrupt == 0x20) {
+struct fullstack {
+    struct cpu_state cpu;
+    unsigned int interrupt;
+    struct stack_state stack;
+};
+
+void interrupt_handler(struct fullstack *fstack) {
+    if (fstack->interrupt == 0x20) {
         if (tick > 0) {
             tick--;
         }
-        PIC_sendEOI(interrupt);
+        PIC_sendEOI(fstack->interrupt);
         return;
     }
-    
 
-    if (interrupt < 48 && int_reg[interrupt].present == 1) {
-        int_reg[interrupt].fnc(interrupt, int_reg[interrupt].ext);
-    } else if(interrupt == 128) {
+    if (fstack->interrupt < 48 && int_reg[fstack->interrupt].present == 1) {
+        int_reg[fstack->interrupt].fnc(fstack->interrupt, int_reg[fstack->interrupt].ext);
+    } else if(fstack->interrupt == 128) {
         //syscalls
-        switch (cpu.eax) {
+        switch (fstack->cpu.eax) {
             case 42: //write     
-                for (unsigned int i = 0; i < cpu.ecx; i++) {
-                    put(((char *)cpu.ebx)[i]);
+                for (unsigned int i = 0; i < fstack->cpu.ecx; i++) {
+                    put(((char *)fstack->cpu.ebx)[i]);
                 }
-                cpu.eax = 0; //return code
+                fstack->cpu.eax = 0; //return code
                 break;
             default:
                 kprintf("unknown syscall !!\n");
                 break;
         }
     } else {
-        kprintf("CS=0x%8h, int_no=0x%8h, err_code=0x%8h\n", stack.cs, interrupt, stack.error_code);
-        kprintf("EDI=0x%8h, ESI=0x%8h, EBP=0x%8h\n", cpu.edi, cpu.esi, cpu.ebp);
-        kprintf("ESP=0x%8h, EBX=0x%8h, EDX=0x%8h\n", cpu.esp, cpu.ebx, cpu.edx);
-        kprintf("ECX=0x%8h, EAX=0x%8h, EIP=0x%8h\n", cpu.ecx, cpu.eax, stack.eip);
+        kprintf("CS=0x%8h, int_no=0x%8h, err_code=0x%8h\n", fstack->stack.cs, fstack->interrupt, fstack->stack.error_code);
+        kprintf("EDI=0x%8h, ESI=0x%8h, EBP=0x%8h\n", fstack->cpu.edi, fstack->cpu.esi, fstack->cpu.ebp);
+        kprintf("ESP=0x%8h, EBX=0x%8h, EDX=0x%8h\n", fstack->cpu.esp, fstack->cpu.ebx, fstack->cpu.edx);
+        kprintf("ECX=0x%8h, EAX=0x%8h, EIP=0x%8h\n", fstack->cpu.ecx, fstack->cpu.eax, fstack->stack.eip);
     }
 
-    PIC_sendEOI(interrupt);
+    PIC_sendEOI(fstack->interrupt);
 }
 
 void idt_set_gate(unsigned char num, unsigned int base, unsigned short sel, unsigned char flags) {
