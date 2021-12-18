@@ -140,7 +140,7 @@ void interrupt_handler(struct fullstack *fstack) {
                 fstack->cpu.eax = 0; //return code
                 break;
             default:
-                kprintf("unknown syscall !!\n");
+                kprintf("unknown syscall !! (%d)\n", fstack->cpu.eax);
                 break;
         }
     } else {

@@ -103,31 +103,8 @@ tss_flush:
 	ret
 
 
-global switch_to_user_mode
+;global switch_to_user_mode
 global stack_space
-switch_to_user_mode:
-	cli ;critical code section
-	
-	mov ax, 0x23 ; Load user data segmement selectors.
-	mov ds, ax
-	mov es, ax
-	mov fs, ax
-	mov gs, ax
-	;mov ss, ax
-
-	;mov eax, esp
-	push 0x23
-	push 0x00001000
-	pushf ;some tric to enable interupt back
-	pop eax 
-	or eax, 0x200
-	push eax
-	push 0x1b
-	push 0x00000020
-	iret
-.1:
-	;hlt
-	jmp .1
 
 section .bss
     align 16

@@ -49,7 +49,8 @@ void *memcpy(void *dst, const void *src, unsigned long size);
 void *memset(void* dst, int c, unsigned long size);
 
 void prepare_switch_to_usermode(void);
-extern void switch_to_user_mode(void);
+//extern void switch_to_user_mode(void);
+void switch_to_usermode(uint32_t entry_points, uint32_t esp);
 
 #define CHECK_FLAG(flags,bit)   ((flags) & (1 << (bit)))
 
@@ -192,11 +193,12 @@ void kmain(unsigned long magic, unsigned long addr) {
             }
         }
     }
-    
-    kprintf("entry: 0x%8h\n", *(uint32_t *)section.vaddr);
+
+    kprintf("entry addr: 0x%8h\n", elfhead.entry); 
+    kprintf("entry values: 0x%8h\n", *(uint32_t *)elfhead.entry);
     *((uint32_t *)0x0000203c) = 0;
 
-    switch_to_user_mode();
+    switch_to_usermode(elfhead.entry, 0x1000);
 }
 
 #define HEX_BASE 16
@@ -375,4 +377,30 @@ void sleep(unsigned int t) {
     while(tick != 0) {
         asm volatile("hlt");
     }
+}
+
+void switch_to_usermode(uint32_t entry_points, uint32_t esp) {
+    kprintf("entry addr: 0x%8h\n", entry_points); 
+    kprintf("entry values: 0x%8h\n", *(uint32_t *)entry_points);
+
+    asm volatile(
+        "cli\n"
+        "mov $0x23, %%ax\n"
+        "mov %%ax, %%ds\n"
+        "mov %%ax, %%es\n"
+        "mov %%ax, %%fs\n"
+        "mov %%ax, %%gs\n"
+        "push $0x23\n"
+        "push %%ebx\n"
+        "pushf\n" //eflags tric to enable intterupt on iret
+        "pop %%eax\n"
+        "or $0x200, %%eax\n"
+        "push %%eax\n"
+        "push $0x1b\n"
+        "push %%ecx\n"
+        "iret"
+        :: "b" (esp), "c" (entry_points) : "%eax" //ok so it's working with registers but not memory ?? i'm not sure why maybe compiler setting
+    );
+
+    __builtin_unreachable();
 }
