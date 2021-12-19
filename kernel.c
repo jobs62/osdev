@@ -48,8 +48,6 @@ int put(char c);
 void *memcpy(void *dst, const void *src, unsigned long size);
 void *memset(void* dst, int c, unsigned long size);
 
-void prepare_switch_to_usermode(void);
-//extern void switch_to_user_mode(void);
 void switch_to_usermode(uint32_t entry_points, uint32_t esp);
 
 #define CHECK_FLAG(flags,bit)   ((flags) & (1 << (bit)))
@@ -327,57 +325,6 @@ int put(char c) {
     ++xpos;
 
     return (0);
-}
-
-extern void update_kernel_stack(void *stack);
-
-#define USER_KERN_STACK (virtaddr_t)0xc004ffff
-#define USER_STACk (virtaddr_t)0xbfffffff
-
-void prepare_switch_to_usermode() {
-    unsigned int *user_page_directory = malloc(PAGE_SIZE);
-    unsigned int *user_kernel_table_directory = malloc(PAGE_SIZE);
-    unsigned int *user_stack_table_directory = malloc(PAGE_SIZE);
-    unsigned int *user_stack_limit =  add_vm_entry(0x1000, PAGE_SIZE, VM_MAP_ANONYMOUS | VM_MAP_USER | VM_MAP_WRITE | VM_MAP_USER, 0, 0);
-    unsigned int *kernel_stack_limit =  malloc(PAGE_SIZE) + PAGE_SIZE - 1;
-
-    kprintf("user_page_directory: 0x%8h; user_stack_table_directory: 0x%8h; user_stack_limit: 0x%8h\n",
-        user_page_directory, user_stack_table_directory, user_stack_limit);
-
-    memset(user_page_directory, 0, PAGE_SIZE);
-    user_page_directory[VM_VITRADDR_TO_PDINDEX(KERNAL_MAP_BASE)] = (get_physaddr(user_kernel_table_directory) & ~FIRST_12BITS_MASK) | VM_PAGE_USER_ACCESS | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT; //kernel mapping
-    user_page_directory[VM_VITRADDR_TO_PDINDEX(KERNAL_MAP_BASE) - 1] = (get_physaddr(user_stack_table_directory) & ~FIRST_12BITS_MASK) | VM_PAGE_USER_ACCESS | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT; //user stack
-
-    memset(user_kernel_table_directory, 0, PAGE_SIZE);
-    /*
-     * having to map kernel code is terrible but as for now it's a good PoC
-     * i guess in the feature i should load a elf and point directly at start entry
-     */
-    unsigned int *kpage_table_init = (unsigned int *)&PAGE_TABLE;
-    for (int i = 0; i < PAGE_LEN; i++) {
-        if ((kpage_table_init[i] & VM_PAGE_PRESENT) == 0) {
-            continue;
-        }
-
-        if ((kpage_table_init[i] & VM_PAGE_READ_WRITE) != 0) {
-            user_kernel_table_directory[i] = kpage_table_init[i]; //do not give access to kernel stack to userspace
-        } else {
-            user_kernel_table_directory[i] = kpage_table_init[i] | VM_PAGE_USER_ACCESS; //map kernel for userspace
-        }
-    }
-
-    user_kernel_table_directory[VM_VITRADDR_TO_PTINDEX(USER_KERN_STACK)] = (get_physaddr(kernel_stack_limit) & ~FIRST_12BITS_MASK) | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT; //kernel stack
-    update_kernel_stack(USER_KERN_STACK); /* OK, so i need a valid stack for handling interupt, which is fine, but i still need to go back to
-                                      * kernel memory mapping to do some stuff.
-                                      */
-
-    memset(user_stack_table_directory, 0, PAGE_SIZE);
-    user_stack_table_directory[VM_VITRADDR_TO_PTINDEX(USER_STACk)] = (get_physaddr(user_stack_limit) & ~FIRST_12BITS_MASK) | VM_PAGE_USER_ACCESS | VM_PAGE_READ_WRITE | VM_PAGE_PRESENT; //user stack, read-write, user access, present
-    *user_stack_limit = 0;
-
-    //asm volatile("mov %0, %%cr3" : : "r"(get_physaddr(user_page_directory)));
-
-    //
 }
 
 extern unsigned int tick;

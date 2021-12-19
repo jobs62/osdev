@@ -133,12 +133,19 @@ void interrupt_handler(struct fullstack *fstack) {
     } else if(fstack->interrupt == 128) {
         //syscalls
         switch (fstack->cpu.eax) {
-            case 42: //write     
-                for (unsigned int i = 0; i < fstack->cpu.ecx; i++) {
-                    put(((char *)fstack->cpu.ebx)[i]);
+            case 42: //write
+                {
+                    unsigned int i;     
+                    for (i = 0; i < fstack->cpu.ecx; i++) {
+                        put(((char *)fstack->cpu.ebx)[i]);
+                    }
+                    fstack->cpu.eax = i; //return code
                 }
-                fstack->cpu.eax = 0; //return code
                 break;
+            case 66: //exit
+                kprintf("task finished with return code %d\n", fstack->cpu.ebx);
+                while(1) {}
+                break; //TODO: clean / kill / task switch / whatever
             default:
                 kprintf("unknown syscall !! (%d)\n", fstack->cpu.eax);
                 break;

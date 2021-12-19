@@ -5,6 +5,6 @@ extern main
 _start:
     call main
 
-loop:
-    pause
-    jmp loop
+    mov ebx, eax
+    mov eax, 0x42
+    int 0x80 ;call exit syscall

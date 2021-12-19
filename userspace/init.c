@@ -50,7 +50,7 @@ int syscall_##fn(P1 p1, P2 p2, P3 p3, P4 p4, P5 p5) { \
 DECL_SYSCALL2(write, char*, unsigned int);
 DEFN_SYSCALL2(write, 42, char*, unsigned int);
 
-void main() {
+int main() {
     //bon la je vais pas pouvoire faire grand chose
-    syscall_write("hello from user program !\n", 26);
+    return syscall_write("hello from user program !\n", 26);
 }
