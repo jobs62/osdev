@@ -194,11 +194,20 @@ void kmain(unsigned long magic, unsigned long addr) {
         }
     }
 
+    uint32_t user_stack_bottom = add_vm_entry(0xc0000000 - 3 * PAGE_SIZE, PAGE_SIZE * 3, VM_MAP_ANONYMOUS | VM_MAP_USER | VM_MAP_WRITE, 0, 0);
+    if (user_stack_bottom == 0) {
+        kprintf("stack oups\n");
+        return;
+    }
+    
+    kprintf("stack bot 0x%8h\n", user_stack_bottom);
+    uint32_t user_stack_top = user_stack_bottom + 3 * PAGE_SIZE - 5;
+
     kprintf("entry addr: 0x%8h\n", elfhead.entry); 
     kprintf("entry values: 0x%8h\n", *(uint32_t *)elfhead.entry);
-    *((uint32_t *)0x0000203c) = 0;
+    *((uint8_t *)user_stack_top) = 0;
 
-    switch_to_usermode(elfhead.entry, 0x1000);
+    switch_to_usermode(elfhead.entry, user_stack_top);
 }
 
 #define HEX_BASE 16

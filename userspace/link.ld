@@ -5,19 +5,19 @@ OUTPUT_FORMAT(elf32-i386)
 ENTRY(_start)
 
 SECTIONS{
-	.text BLOCK (4096) : {
+	.text  : {
         *(.text)
 	}
 	
-	.rodata BLOCK (4096) : {
+	.rodata : {
 		*(.rodata)
 	}
 	
-	.data BLOCK (4096) : {
+	.data : {
 		*(.data)
 	}
 	
-	.bss BLOCK(4096) : {
+	.bss : {
 		*(.bss)
 	}
 }
