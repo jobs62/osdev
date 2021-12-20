@@ -74,6 +74,30 @@ physaddr_t get_physaddr(virtaddr_t virtaddr) {
     return (ptentry & ~FIRST_12BITS_MASK) + ((unsigned int)virtaddr & FIRST_12BITS_MASK);
 }
 
+uint16_t get_flags(virtaddr_t virtaddr) {
+    unsigned int pdindex = VM_VITRADDR_TO_PDINDEX(virtaddr);
+    unsigned int ptindex = VM_VITRADDR_TO_PTINDEX(virtaddr);
+    //kprintf("pd: 0x%8h; pt: 0x%8h\n", pdindex, ptindex);
+
+    unsigned int pdentry = (unsigned int)kpage_directory[pdindex];
+    if ((pdentry & 0x00000001) == 0) {
+        //kprintf("pt not present\n");
+        return (0);
+    }
+   
+    //So i guess i have to map every pt to a specific virtual location to be able to find them
+    unsigned int *pt = VM_PDINDEX_TO_PTR(pdindex);
+    unsigned int ptentry = pt[ptindex];
+    //kprintf("pt: 0x%8h; ptentry: 0x%8h\n", pt, ptentry);
+    if ((ptentry & 0x00000001) == 0) {
+        //kprintf("pte not present\n");
+        return (0);
+    }
+    //kprintf("pt: 0x%8h\n", pt);
+
+    return (ptentry & FIRST_12BITS_MASK);
+}
+
 int map_page(physaddr_t physadd, virtaddr_t virtaddr, unsigned int flags) {
     kprintf("map_page: physadd: 0x%8h; virtaddr: 0x%8h; flags: 0x%8h\n", physadd, virtaddr, flags);
 
@@ -159,6 +183,7 @@ void unmap_page(virtaddr_t virtaddr) {
     }
 }
 
+extern uint8_t __stdlib_unsafe;
 void vmm_init() {
     unsigned int *vmm_base = VM_PT_MOUNT_BASE;
 
@@ -189,6 +214,8 @@ void vmm_init() {
     vm_map[0].base = (void *)0xffffffff;
     vm_map_size = 1;
     register_interrupt(0xE, page_fault_interrupt_handler, 0);
+
+    __stdlib_unsafe = 0;
 }
 
 void *add_vm_entry(void *hint, uint32_t size, uint32_t flags, struct file *file, uint32_t offset, uint32_t disksize) {
@@ -361,3 +388,32 @@ void dump_vm_map() {
     }
 }
 
+int __check_ptr_userspace(void *ptr, uint32_t len) {
+    for (void *p = ptr; p < ptr + len; p += PAGE_SIZE) {
+        if ((get_flags(p) & VM_PAGE_USER_ACCESS) == 0) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+int __check_ptr(void *ptr, uint32_t len) {
+    for (void *p = ptr; p < ptr + len; p += PAGE_SIZE) {
+        if ((get_flags(p) & VM_PAGE_PRESENT) == 0) {
+            return 1;
+        }
+    }
+    
+    return 0;
+}
+
+int __check_ptr_write(void *ptr, uint32_t len) {
+    for (void *p = ptr; p < ptr + len; p += PAGE_SIZE) {
+        if ((get_flags(p) & (VM_PAGE_PRESENT | VM_PAGE_READ_WRITE)) != (VM_PAGE_PRESENT | VM_PAGE_READ_WRITE)) {
+            return 1;
+        }
+    }
+    
+    return 0;
+}

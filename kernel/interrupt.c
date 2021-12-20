@@ -1,5 +1,6 @@
 #include "io.h"
 #include "interrupt.h"
+#include "vmm.h"
 
 struct cpu_state {
     unsigned int edi;
@@ -135,8 +136,10 @@ void interrupt_handler(struct fullstack *fstack) {
         //syscalls
         switch (fstack->cpu.eax) {
             case 42: //write
-                {
-                    unsigned int i;     
+                if (__check_ptr_userspace(fstack->cpu.ebx, fstack->cpu.ecx)) {
+                    fstack->cpu.eax = -1;
+                } else {
+                    unsigned int i;
                     for (i = 0; i < fstack->cpu.ecx; i++) {
                         put(((char *)fstack->cpu.ebx)[i]);
                     }

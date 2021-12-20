@@ -1,6 +1,14 @@
 #include "stdlib.h"
+#include "vmm.h"
+
+uint8_t __stdlib_unsafe = 1;
 
 void *memcpy(void *dst, const void *src, unsigned long size) {
+    if (!__stdlib_unsafe && (__check_ptr_write(dst, size) || __check_ptr(src, size))) {
+        kprintf("memcpy ptr check fail at %s:%1d\n", __FILE__, __LINE__);
+        return (0);
+    }
+
     char *dp = (char *)dst;
     const char *sp = (const char *)src;
     while (size--) {
@@ -11,6 +19,11 @@ void *memcpy(void *dst, const void *src, unsigned long size) {
 
 
 void *memset(void* dst, int c, unsigned long size) {
+    if (!__stdlib_unsafe && __check_ptr(dst, size)) {
+        kprintf("memset ptr check fail at %s:%1d\n", __FILE__, __LINE__);
+        return (0);
+    }
+
     unsigned char *p = (unsigned char *)dst;
     while (size--) {
         *p++ = (unsigned char)c;
