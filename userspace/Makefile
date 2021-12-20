@@ -1,15 +1,7 @@
-AS=nasm
-CC=gcc
-LD=ld
+include Makefile.inc
 
 C_SRC= init.c
 ASM_SRC= start.asm
-
-CFLAGS= -m32 -O2 -g
-CFLAGS+= -std=gnu99 -Wall -Wextra
-CFLAGS+= -fstrength-reduce -fomit-frame-pointer -finline-functions -nostdinc -fno-builtin
-
-LDFLAGS= -f elf32
 
 C_OBJ= $(C_SRC:.c=.o)
 ASM_OBJ= $(ASM_SRC:.asm=.oa)

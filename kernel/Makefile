@@ -1,15 +1,7 @@
-AS=nasm
-CC=gcc
-LD=ld
+include Makefile.inc
 
 C_SRC= kernel.c gdt.c interrupt.c tss.c pci.c ata.c fat.c vmm.c pmm.c stdlib.c liballoc.c liballoc_hook.c virtio_blk.c bdev.c mbr.c
 ASM_SRC= kernel.asm interrupt.asm
-
-CFLAGS= -m32 -O2 -g
-CFLAGS+= -std=gnu99 -Wall -Wextra
-CFLAGS+= -fstrength-reduce -fomit-frame-pointer -finline-functions -nostdinc -fno-builtin
-
-LDFLAGS= -f elf32
 
 C_OBJ= $(C_SRC:.c=.o)
 ASM_OBJ= $(ASM_SRC:.asm=.oa)

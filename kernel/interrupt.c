@@ -17,8 +17,8 @@ struct stack_state {
     unsigned int eip;
     unsigned int cs;
     unsigned int eflags;
-    //unsigned int esp; //only pushed/poped if ring3 -> ring0 int
-    //unsigned int ss; //only pushed/poped if ring3 -> ring0 int
+    unsigned int esp; //only pushed/poped if ring3 -> ring0 int
+    unsigned int ss; //only pushed/poped if ring3 -> ring0 int
 } __attribute__((packed));
 
 struct idt_entry {

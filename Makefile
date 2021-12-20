@@ -1,12 +1,17 @@
-all: kernel/myos.bin disk.img
+include Makefile.inc
 
-kernel/myos.bin: 
-	make -C kernel myos.bin
+SUBDIR += kernel
+SUBDIR += userspace
 
-userspace/init:
-	make -C userspace all
+all: ${SUBDIR}
 
-disk.img: userspace/init
+$(SUBDIR): force_look
+	make -C $@
+
+force_look:
+	true
+
+disk.img: userspace
 	dd if=/dev/zero of=$@ bs=1M count=100
 	/usr/sbin/mkfs.fat --mbr=y $@
 	mkdir diskmount
@@ -15,14 +20,12 @@ disk.img: userspace/init
 	sudo umount $@
 	rmdir diskmount
 
-run: kernel/myos.bin disk.img
+run: kernel disk.img
 	qemu-system-i386 -monitor stdio -kernel kernel/myos.bin -no-shutdown -no-reboot -drive file=disk.img,format=raw,if=virtio
 
 clean:
-	make -C userspace clean
-	make -C kernel clean
+	for d in $(SUBDIR); do make -C $$d clean; done
 
-mrproper: clean
-	make -C userspace mrproper
-	make -C kernel mrproper
+mrproper:
+	for d in $(SUBDIR); do make -C $$d mrproper; done
 	rm -f disk.img
