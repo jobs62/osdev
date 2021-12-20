@@ -1,5 +1,9 @@
 *.o
 *.oa
-myos.bin
+kernel/myos.bin
+kernel/myos.bin.sym
+userspace/init
+userspace/init.sym
+disk.img
 compile_commands.json
 .cache/
