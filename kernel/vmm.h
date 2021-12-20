@@ -23,7 +23,7 @@ physaddr_t get_physaddr(virtaddr_t virtaddr);
 int map_page(physaddr_t physadd, virtaddr_t virtaddr, unsigned int flags);
 void unmap_page(virtaddr_t virtaddr);
 
-void *add_vm_entry(void *hint, uint32_t size, uint32_t flags, struct file *file, uint32_t offset);
+void *add_vm_entry(void *hint, uint32_t size, uint32_t flags, struct file *file, uint32_t offset, uint32_t disksize);
 void rm_vm_entry(void *base);
 void dump_vm_map(void);
 

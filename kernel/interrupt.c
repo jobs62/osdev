@@ -114,6 +114,7 @@ unsigned int tick = 0;
 extern int put(char c);
 
 struct fullstack {
+    unsigned int cr3;
     struct cpu_state cpu;
     unsigned int interrupt;
     struct stack_state stack;

@@ -19,10 +19,18 @@ common_interrupt_handler:
 	; Save registers
 	pusha ; Pushes edi, esi, ebp, esp, ebx, edx, ecx, eax
 
+	; Save CR3
+	mov eax, cr3
+	push eax
+
 	; Call C handler
 	push esp
 	call interrupt_handler
 	add esp, 4 ;clean up the stack
+
+	; Restore CR3
+	pop eax
+	mov cr3, eax
 
 	; Restore registers
 	popa ; Pop edi, esi, ebp, esp, ebx, edx, ecx, eax

@@ -25,6 +25,7 @@ struct vm_entry {
     uint32_t flags;
     struct file *file;
     uint32_t offset;
+    uint32_t disksize;
 };
 
 struct vm_entry vm_map[1024]; //that should be in task struct
@@ -190,7 +191,7 @@ void vmm_init() {
     register_interrupt(0xE, page_fault_interrupt_handler, 0);
 }
 
-void *add_vm_entry(void *hint, uint32_t size, uint32_t flags, struct file *file, uint32_t offset) {
+void *add_vm_entry(void *hint, uint32_t size, uint32_t flags, struct file *file, uint32_t offset, uint32_t disksize) {
     //check flags for idotique things
     if ((flags & VM_MAP_USER) && (flags & VM_MAP_KERNEL)) {
         return 0;
@@ -239,6 +240,7 @@ fit_with_hint:
             vm_map[i].flags = flags;
             vm_map[i].file = file;
             vm_map[i].offset = offset;
+            vm_map[i].disksize = disksize;
             vm_map_size++;
 
             return (vm_map[i].base);
@@ -341,11 +343,12 @@ page_fault:
         return;
     }
 
-    if (vm->flags & VM_MAP_FILE) {
+    memset((virtaddr_t)((uint32_t)faulty_address & ~FIRST_12BITS_MASK), 0, PAGE_SIZE);
+    if (vm->flags & VM_MAP_FILE && ((faulty_address - vm->base) & ~FIRST_12BITS_MASK) < vm->disksize) {
         if (fat_seek(vm->file, vm->offset + (faulty_address - vm->base) & ~FIRST_12BITS_MASK, SEEK_SET) != 0) {
             kprintf("fat_seek error\n");
         }
-        fat_read(vm->file, (virtaddr_t)((uint32_t)faulty_address & ~FIRST_12BITS_MASK), PAGE_SIZE);
+        fat_read(vm->file, (virtaddr_t)((uint32_t)faulty_address & ~FIRST_12BITS_MASK), min(PAGE_SIZE, vm->disksize - ((faulty_address - vm->base) & ~FIRST_12BITS_MASK)));
     }
 
     map_change_permission(faulty_address, flags);

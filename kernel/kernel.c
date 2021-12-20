@@ -185,14 +185,14 @@ void kmain(unsigned long magic, unsigned long addr) {
 
         if (section.type == 1) {
             kprintf("address: 0x%8h; size: %1d: offset: %1d\n", section.vaddr, section.memsz, section.offset);
-            if (add_vm_entry(section.vaddr, section.memsz, VM_MAP_FILE | VM_MAP_WRITE | VM_MAP_USER, &file, section.offset) != section.vaddr) {
+            if (add_vm_entry(section.vaddr, section.memsz, VM_MAP_FILE | VM_MAP_WRITE | VM_MAP_USER, &file, section.offset, section.filesz) != section.vaddr) {
                 kprintf("unable to map to requeired location. aborting\n");
                 return;
             }
         }
     }
 
-    uint32_t user_stack_bottom = add_vm_entry(0xc0000000 - 3 * PAGE_SIZE, PAGE_SIZE * 3, VM_MAP_ANONYMOUS | VM_MAP_USER | VM_MAP_WRITE, 0, 0);
+    uint32_t user_stack_bottom = add_vm_entry(0xc0000000 - 3 * PAGE_SIZE, PAGE_SIZE * 3, VM_MAP_ANONYMOUS | VM_MAP_USER | VM_MAP_WRITE, 0, 0, 0);
     if (user_stack_bottom == 0) {
         kprintf("stack oups\n");
         return;

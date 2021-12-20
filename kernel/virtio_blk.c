@@ -125,7 +125,7 @@ void virtio_blk_init(struct pci_header *head, uint8_t bus, uint8_t slot, uint8_t
     uint32_t avail_size = 6 + 2 * device->queue_size;
     uint32_t totan_queue_size = ((virtq_size(device->queue_size) / 4096) + 1) * 4096; //to have full page size
 
-    device->queue.desc = (struct virtq_desc *)add_vm_entry((void *)0xC0200000, totan_queue_size, VM_MAP_ANONYMOUS | VM_MAP_WRITE | VM_MAP_KERNEL, (void *)0, 0);
+    device->queue.desc = (struct virtq_desc *)add_vm_entry((void *)0xC0200000, totan_queue_size, VM_MAP_ANONYMOUS | VM_MAP_WRITE | VM_MAP_KERNEL, (void *)0, 0, 0);
     memset(device->queue.desc, 0, totan_queue_size);
     device->queue.avail = (struct virtq_avail *)((uint32_t)device->queue.desc + desc_size);
     device->queue.used = (struct virtq_used *)(((((uint32_t)device->queue.avail + avail_size) / 4096) + 1) * 4096);
