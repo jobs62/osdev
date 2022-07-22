@@ -12,12 +12,12 @@ all: myos.bin
 	${CC} ${CFLAGS} -c $< -o $@
 
 %.oa: %.asm
-	${AS} ${LDFLAGS} $< -o $@
+	${AS} ${ASFLAGS} $< -o $@
 
 myos.bin: $(C_OBJ) $(ASM_OBJ) link.ld
 	${LD} -m elf_i386 -T link.ld -o myos.bin $(C_OBJ) $(ASM_OBJ)
-	objcopy --only-keep-debug $@ $@.sym
-	objcopy --strip-debug $@
+	${OBJCOPY} --only-keep-debug $@ $@.sym
+	${OBJCOPY} --strip-debug $@
 
 clean:
 	rm -f ${C_OBJ} ${ASM_OBJ}
