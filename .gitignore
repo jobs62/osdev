@@ -7,3 +7,12 @@ userspace/init.sym
 disk.img
 compile_commands.json
 .cache/
+toolchain/build/*
+toolchain/binutils-*
+toolchain/gcc-*
+toolchain/mpc-*
+toolchain/gmp-*
+toolchain/mpfr-*
+toolchain/nasm-*
+toolchain/.*
+toolchain/*.tar.*
