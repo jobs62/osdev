@@ -1,0 +1,97 @@
+diff -ruN gcc-12.1.0/config.sub gcc-12.1.0-work/config.sub
+--- gcc-12.1.0/config.sub	2022-05-06 09:30:56.000000000 +0200
++++ gcc-12.1.0-work/config.sub	2022-07-23 22:21:03.287902112 +0200
+@@ -1749,7 +1749,7 @@
+ 	     | onefs* | tirtos* | phoenix* | fuchsia* | redox* | bme* \
+ 	     | midnightbsd* | amdhsa* | unleashed* | emscripten* | wasi* \
+ 	     | nsk* | powerunix* | genode* | zvmoe* | qnx* | emx* | zephyr* \
+-	     | fiwix* )
++	     | fiwix* | myos )
+ 		;;
+ 	# This one is extra strict with allowed versions
+ 	sco3.2v2 | sco3.2v[4-9]* | sco5v6*)
+diff -ruN gcc-12.1.0/fixincludes/mkfixinc.sh gcc-12.1.0-work/fixincludes/mkfixinc.sh
+--- gcc-12.1.0/fixincludes/mkfixinc.sh	2022-05-06 09:30:56.000000000 +0200
++++ gcc-12.1.0-work/fixincludes/mkfixinc.sh	2022-07-23 22:38:30.299535126 +0200
+@@ -20,7 +20,7 @@
+     powerpcle-*-eabisim* | \
+     powerpcle-*-eabi* | \
+     *-*-vxworks7* | \
+-    *-musl* )
++    *-musl* | *-*-myos )
+ 	#  IF there is no include fixing,
+ 	#  THEN create a no-op fixer and exit
+ 	(echo "#! /bin/sh" ; echo "exit 0" ) > ${target}
+diff -ruN gcc-12.1.0/gcc/config/myos.h gcc-12.1.0-work/gcc/config/myos.h
+--- gcc-12.1.0/gcc/config/myos.h	1970-01-01 01:00:00.000000000 +0100
++++ gcc-12.1.0-work/gcc/config/myos.h	2022-07-23 22:36:04.736161341 +0200
+@@ -0,0 +1,28 @@
++/* Useful if you wish to make target-specific GCC changes. */
++#undef TARGET_MYOS
++#define TARGET_MYOS 1
++ 
++/* Default arguments you want when running your
++   i686-myos-gcc/x86_64-myos-gcc toolchain */
++#undef LIB_SPEC
++#define LIB_SPEC "-lc" /* link against C standard library */
++ 
++/* Files that are linked before user code.
++   The %s tells GCC to look for these files in the library directory. */
++#undef STARTFILE_SPEC
++#define STARTFILE_SPEC "crt0.o%s crti.o%s crtbegin.o%s"
++ 
++/* Files that are linked after user code. */
++#undef ENDFILE_SPEC
++#define ENDFILE_SPEC "crtend.o%s crtn.o%s"
++ 
++/* Additional predefined macros. */
++#undef TARGET_OS_CPP_BUILTINS
++#define TARGET_OS_CPP_BUILTINS()      \
++  do {                                \
++    builtin_define ("__myos__");      \
++    builtin_define ("__unix__");      \
++    builtin_assert ("system=myos");   \
++    builtin_assert ("system=unix");   \
++    builtin_assert ("system=posix");  \
++  } while(0);
+\ Pas de fin de ligne à la fin du fichier
+diff -ruN gcc-12.1.0/gcc/config.gcc gcc-12.1.0-work/gcc/config.gcc
+--- gcc-12.1.0/gcc/config.gcc	2022-05-06 09:30:56.000000000 +0200
++++ gcc-12.1.0-work/gcc/config.gcc	2022-07-23 22:28:17.438014843 +0200
+@@ -1084,6 +1084,11 @@
+   default_use_cxa_atexit=yes
+   use_gcc_stdint=wrap
+   ;;
++*-*-myos)
++	gas=yes
++	gnu_ld=yes
++	default_use_cxa_atexit=yes
++	use_gcc_stdint=provide
+ esac
+ 
+ case ${target} in
+@@ -3586,6 +3591,9 @@
+ 	c_target_objs="m32c-pragma.o"
+ 	cxx_target_objs="m32c-pragma.o"
+  	;;
++i[3-7]86-*-myos)
++	tm_file="${tm_file} i386/unix.h i386/att.h dbxelf.h elfos.h glibc-stdint.h i386/i386elf.h myos.h"
++	;;
+ *)
+ 	echo "*** Configuration ${target} not supported" 1>&2
+ 	exit 1
+diff -ruN gcc-12.1.0/libgcc/config.host gcc-12.1.0-work/libgcc/config.host
+--- gcc-12.1.0/libgcc/config.host	2022-05-06 09:30:59.000000000 +0200
++++ gcc-12.1.0-work/libgcc/config.host	2022-07-23 22:37:39.083757289 +0200
+@@ -1538,6 +1534,10 @@
+ 	tmake_file="$tmake_file nvptx/t-nvptx"
+ 	extra_parts="crt0.o"
+ 	;;
++i[3-7]86-*-myos)
++	extra_parts="$extra_parts crti.o crtbegin.o crtend.o crtn.o"
++	tmake_file="$tmake_file i386/t-crtstuff t-crtstuff-pic t-libgcc-pic"
++	;;
+ *)
+ 	echo "*** Configuration ${host} not supported" 1>&2
+ 	exit 1
+
