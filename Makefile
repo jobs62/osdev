@@ -21,7 +21,7 @@ disk.img: userspace
 	rmdir diskmount
 
 run: kernel disk.img
-	qemu-system-i386 -monitor stdio -kernel kernel/myos.bin -no-shutdown -no-reboot -drive file=disk.img,format=raw,if=virtio
+	qemu-system-i386 -monitor stdio -kernel kernel/myos.bin -no-shutdown -no-reboot -drive file=disk.img,format=raw,if=virtio -S -gdb tcp::1234 &
 
 clean:
 	for d in $(SUBDIR); do make -C $$d clean; done
