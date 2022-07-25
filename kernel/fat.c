@@ -59,15 +59,15 @@ struct fat_bpb {
 
 
 
-struct fat_fs fs;
+struct fat_fs filesystem;
 
 enum bdev_payload_status fat_init(uint8_t drive) {
 	struct fat_bpb bpb;
-	fs.fat_type = FAT_TYPE_NONE;
+	filesystem.fat_type = FAT_TYPE_NONE;
 	uint8_t err;
 
 	kprintf("fat init drive %1d\n", drive);
-	fs.device = drive;
+	filesystem.device = drive;
 
 	if ((err = bdev_read(drive, 1, 0, &bpb)) != 0) {
 		kprintf("ide_read_sectore error (%d)\n", err);
@@ -79,13 +79,13 @@ enum bdev_payload_status fat_init(uint8_t drive) {
 		goto involid_fat_header;
 	}
 
-	fs.fat_root_dir_size = ((bpb.common.BPB_RootEntCnt * 32) + (bpb.common.BPB_BytsPerSec - 1)) / bpb.common.BPB_BytsPerSec;
+	filesystem.fat_root_dir_size = ((bpb.common.BPB_RootEntCnt * 32) + (bpb.common.BPB_BytsPerSec - 1)) / bpb.common.BPB_BytsPerSec;
 	uint32_t TotSec;
 
 	if (bpb.common.BPB_FATz16 != 0) {
-		fs.fat_fat_size = bpb.common.BPB_FATz16;
+		filesystem.fat_fat_size = bpb.common.BPB_FATz16;
 	} else {
-		fs.fat_fat_size = bpb.extended.fat32.BPB_FATz32;
+		filesystem.fat_fat_size = bpb.extended.fat32.BPB_FATz32;
 	}
 
 	if (bpb.common.BPB_TotSec16 != 0) {
@@ -94,63 +94,63 @@ enum bdev_payload_status fat_init(uint8_t drive) {
 		TotSec = bpb.common.BPB_TotSec32;
 	}
 
-	fs.fat_first_sector_fat = bpb.common.BPB_RsvdSecCnt;
-	fs.fat_first_sector_data = (fs.fat_first_sector_fat + (bpb.common.BPB_NumFATs * fs.fat_fat_size) + fs.fat_root_dir_size);
-	uint32_t DataSec = TotSec - fs.fat_first_sector_data;
+	filesystem.fat_first_sector_fat = bpb.common.BPB_RsvdSecCnt;
+	filesystem.fat_first_sector_data = (filesystem.fat_first_sector_fat + (bpb.common.BPB_NumFATs * filesystem.fat_fat_size) + filesystem.fat_root_dir_size);
+	uint32_t DataSec = TotSec - filesystem.fat_first_sector_data;
 	uint32_t CountofClusters = DataSec / bpb.common.BPB_SecPerClus;
-	fs.fat_data_size = DataSec * bpb.common.BPB_BytsPerSec;
-	fs.fat_cluster_size = bpb.common.BPB_SecPerClus;
+	filesystem.fat_data_size = DataSec * bpb.common.BPB_BytsPerSec;
+	filesystem.fat_cluster_size = bpb.common.BPB_SecPerClus;
 
 	if (CountofClusters < 4085) {
-		fs.fat_type = FAT_TYPE_12;
+		filesystem.fat_type = FAT_TYPE_12;
 	} else if (CountofClusters < 65525) {
-		fs.fat_type  = FAT_TYPE_16;
+		filesystem.fat_type  = FAT_TYPE_16;
 	} else {
-		fs.fat_type  = FAT_TYPE_32;
+		filesystem.fat_type  = FAT_TYPE_32;
 	}
 
 	if (bpb.common.BS_jmpBoot[0] != 0xeb) {
 		kprintf("jmp boot fail\n");
-		fs.fat_type = FAT_TYPE_NONE;
+		filesystem.fat_type = FAT_TYPE_NONE;
 	} 
 
-	if (fs.fat_type  == FAT_TYPE_12 || fs.fat_type  == FAT_TYPE_16) {
+	if (filesystem.fat_type  == FAT_TYPE_12 || filesystem.fat_type  == FAT_TYPE_16) {
 		//Check for FAT12/16
 		if (bpb.extended.fat16.Signature_word != 0xAA55) {
 			kprintf("sig fail\n");
-			fs.fat_type = FAT_TYPE_NONE;
+			filesystem.fat_type = FAT_TYPE_NONE;
 		}
 
 		if (bpb.common.BPB_RootEntCnt * 32 % bpb.common.BPB_BytsPerSec != 0) {
 			kprintf("BPB_RootEntCnt fail\n");
-			fs.fat_type = FAT_TYPE_NONE;
+			filesystem.fat_type = FAT_TYPE_NONE;
 		}
 	} else {
 		//Check for FAT32
 		if (bpb.extended.fat32.Signature_word != 0xAA55) {
 			kprintf("sig fail\n");
-			fs.fat_type = FAT_TYPE_NONE;
+			filesystem.fat_type = FAT_TYPE_NONE;
 		}
 
-		if (fs.fat_root_dir_size != 0) {
+		if (filesystem.fat_root_dir_size != 0) {
 			kprintf("root_dir_sectors fail\n");
-			fs.fat_type = FAT_TYPE_NONE;
+			filesystem.fat_type = FAT_TYPE_NONE;
 		}
 
 		if (bpb.common.BPB_RootEntCnt != 0) {
 			kprintf("BPB_RootEntCnt fail\n");
-			fs.fat_type = FAT_TYPE_NONE;
+			filesystem.fat_type = FAT_TYPE_NONE;
 		}
 	}
 
-	switch (fs.fat_type) {
+	switch (filesystem.fat_type) {
 		case FAT_TYPE_NONE:
 involid_fat_header:
 			kprintf("Invalid FAT partition\n");
 			return BDEV_FORWARD;
 		case FAT_TYPE_12:
 			kprintf("FAT12 Not supported\n");
-			fs.fat_type = FAT_TYPE_NONE;
+			filesystem.fat_type = FAT_TYPE_NONE;
 			return BDEV_ERROR;
 		case FAT_TYPE_16:
 			kprintf("FAT16\n");
@@ -160,22 +160,22 @@ involid_fat_header:
 			break;
 	}
 
-	switch(fs.fat_type) {
+	switch(filesystem.fat_type) {
 		case FAT_TYPE_12:
 		case FAT_TYPE_16:
-			fs.fat_root_dir_sector = bpb.common.BPB_RsvdSecCnt + (bpb.common.BPB_NumFATs * bpb.common.BPB_FATz16);
-			fs.fat_root_dir_size = bpb.common.BPB_RootEntCnt * 32;
+			filesystem.fat_root_dir_sector = bpb.common.BPB_RsvdSecCnt + (bpb.common.BPB_NumFATs * bpb.common.BPB_FATz16);
+			filesystem.fat_root_dir_size = bpb.common.BPB_RootEntCnt * 32;
 			break;
 		case FAT_TYPE_32:
-			fs.fat_root_dir_sector = fs.fat_first_sector_data + (bpb.extended.fat32.BPB_RootClus - 2) * bpb.common.BPB_SecPerClus;
-			fs.fat_root_dir_size = 0; //Size of root dir in illimited, and is only limited by FAT EoF
+			filesystem.fat_root_dir_sector = filesystem.fat_first_sector_data + (bpb.extended.fat32.BPB_RootClus - 2) * bpb.common.BPB_SecPerClus;
+			filesystem.fat_root_dir_size = 0; //Size of root dir in illimited, and is only limited by FAT EoF
 			break;
 	}
 
 	kprintf("bpb.common.BPB_RsvdSecCnt: 0x%8h\n", bpb.common.BPB_RsvdSecCnt);
 	kprintf("bpb.common.BPB_NumFATs: 0x%2h\n", bpb.common.BPB_NumFATs);
 	kprintf("bpb.common.BPB_FATz16: 0x%8h\n", bpb.common.BPB_FATz16);
-	kprintf("root dir sector : 0x%8h\n", fs.fat_root_dir_sector);
+	kprintf("root dir sector : 0x%8h\n", filesystem.fat_root_dir_sector);
 
 	return BDEV_SUCCESS;
 }
@@ -407,15 +407,15 @@ int fat_open_from_path(struct fat_sector_itearator *iter, char *path[]) {
 	struct fat_directory_entry *direntry;
 	uint32_t i = 0;
 
-	fat_directory_iterator_root_dir(&inner, &fs);
+	fat_directory_iterator_root_dir(&inner, &filesystem);
 	while ((direntry = fat_directory_iterator_next(&inner)) != (void *)0) {
 		if (fat_name_cmp(direntry->DIR_Name, path[i]) == 0) {
 			i++;
 			if (path[i] == (void *)0) {
-				fat_sector_itearator(iter, direntry, &fs);
+				fat_sector_itearator(iter, direntry, &filesystem);
 				return (0);
 			} else {
-				fat_directory_iterator(&inner2, direntry, &fs);
+				fat_directory_iterator(&inner2, direntry, &filesystem);
 				fat_directory_itearator_copy(&inner, &inner2);
 			}
 		}

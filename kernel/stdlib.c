@@ -1,6 +1,7 @@
 #include "stdlib.h"
 #include "vmm.h"
 
+
 uint8_t __stdlib_unsafe = 1;
 
 void *memcpy(void *dst, const void *src, unsigned long size) {
@@ -9,45 +10,45 @@ void *memcpy(void *dst, const void *src, unsigned long size) {
         return (0);
     }
 
-    char *dp = (char *)dst;
-    const char *sp = (const char *)src;
+    char *destptr = (char *)dst;
+    const char *srcptr = (const char *)src;
     while (size--) {
-        *dp++ = *sp++;
+        *destptr++ = *srcptr++;
     }
     return (dst);
 }
 
 
-void *memset(void* dst, int c, unsigned long size) {
+void *memset(void* dst, int chr, size_t size) {
     if (!__stdlib_unsafe && __check_ptr(dst, size)) {
         kprintf("memset ptr check fail at %s:%1d\n", __FILE__, __LINE__);
         return (0);
     }
 
-    unsigned char *p = (unsigned char *)dst;
+    unsigned char *dstptr = (unsigned char *)dst;
     while (size--) {
-        *p++ = (unsigned char)c;
+        *dstptr++ = (unsigned char)chr;
     }
     return (dst);
 }
 
 
 void *bsearch_s(const void *key, const void *base, uint32_t num, uint32_t size, cmp_func_ext_t cmp, void *ext) {
-    uint32_t l = 0;
-    uint32_t r = num - 1;
-    uint32_t m;
+    uint32_t left = 0;
+    uint32_t rigth = num - 1;
+    uint32_t middle;
     int cmp_rst;
 
-    while (l <= r) {
-        m = (l + r) / 2;
-        cmp_rst = cmp(key, base + m * size, ext);
+    while (left <= rigth) {
+        middle = (left + rigth) / 2;
+        cmp_rst = cmp(key, base + middle * size, ext);
 
         if (cmp_rst > 0) {
-            l = m + 1;
+            left = middle + 1;
         } else if (cmp_rst < 0) {
-            r = m - 1;
+            rigth = middle - 1;
         } else {
-            return (void *)(base + m * size);
+            return (void *)(base + middle * size);
         }
     }
 

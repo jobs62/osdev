@@ -49,7 +49,7 @@ void switch_to_usermode(uint32_t entry_points, uint32_t esp);
 
 #define CHECK_FLAG(flags,bit)   ((flags) & (1 << (bit)))
 
-extern struct fat_fs fs;
+extern struct fat_fs filesystem;
 
 struct elf_header {
     uint8_t ident[16];

@@ -82,7 +82,6 @@ extern void interrupt_handler_39(void);
 extern void interrupt_handler_40(void);
 extern void interrupt_handler_41(void);
 extern void interrupt_handler_42(void);
-extern void interrupt_handler_42(void);
 extern void interrupt_handler_43(void);
 extern void interrupt_handler_44(void);
 extern void interrupt_handler_45(void);
@@ -97,7 +96,6 @@ struct inter_holder {
 };
 
 struct inter_holder int_reg[48];
-extern void kprintf(const char *format, ...);
 
 void PIC_sendEOI(unsigned char irq);
 void PIC_remap(int offset1, int offset2);
@@ -139,11 +137,11 @@ void interrupt_handler(struct fullstack *fstack) {
                 if (__check_ptr_userspace(fstack->cpu.ebx, fstack->cpu.ecx)) {
                     fstack->cpu.eax = -1;
                 } else {
-                    unsigned int i;
-                    for (i = 0; i < fstack->cpu.ecx; i++) {
-                        put(((char *)fstack->cpu.ebx)[i]);
+                    unsigned int index;
+                    for (index = 0; index < fstack->cpu.ecx; index++) {
+                        put(((char *)fstack->cpu.ebx)[index]);
                     }
-                    fstack->cpu.eax = i; //return code
+                    fstack->cpu.eax = index; //return code
                 }
                 break;
             case 66: //exit

@@ -41,14 +41,15 @@ uint32_t pci_config_read(uint8_t bus, uint8_t slot, uint8_t fonc, uint8_t offset
 
 static void pci_config_read_header(struct pci_header *head, uint8_t bus, uint8_t slot, uint8_t fonc) {
 	uint32_t *buffer = (uint32_t *)head;
-	uint32_t i;
+	uint32_t index;
 
 	buffer[0] = pci_config_read(bus, slot, fonc, 0x00);
-	if (head->vendor_id == PCI_UNKNOWN_VENDOR_ID)
+	if (head->vendor_id == PCI_UNKNOWN_VENDOR_ID) {
 		return; // the device don't exist
+	}
 
-	for (i = 1; i < 16; i++) {
-		buffer[i] = pci_config_read(bus, slot, fonc, i * 4);
+	for (index = 1; index < 16; index++) {
+		buffer[index] = pci_config_read(bus, slot, fonc, index * 4);
 	}
 }
 
@@ -59,7 +60,7 @@ void pci_scan_bus(uint8_t bus) {
 }
 
 static void pci_scan_device(uint8_t bus, uint8_t device) {
-	struct pci_header pci_header;
+	struct pci_header pci_header = {0};
 
 	pci_config_read_header(&pci_header, bus, device, 0);
 	if (pci_header.vendor_id == PCI_UNKNOWN_VENDOR_ID) {
