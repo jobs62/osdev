@@ -53,10 +53,3 @@ void *bsearch_s(const void *key, const void *base, uint32_t num, uint32_t size, 
 
     return (void *)(0);
 }
-
-uint32_t min(uint32_t a, uint32_t b) {
-    if (a > b){
-        return b;
-    }
-    return a;
-}

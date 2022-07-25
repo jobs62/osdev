@@ -107,9 +107,7 @@ struct bdev_operation virtio_blk_ops = {
     .read = virtio_blk_read,
 };
 
-extern uint8_t __stdlib_unsafe;
-
-void virtio_blk_init(struct pci_header *head, uint8_t bus, uint8_t slot, uint8_t fonc) {
+void virtio_blk_init(struct pci_header *head, uint8_t bus __attribute__((unused)), uint8_t slot __attribute__((unused)), uint8_t fonc __attribute__((unused))) {
     kprintf("virtio_blk_init: bar0: 0x%8h\n", head->specific.type0.bar0);
     struct virtio_blk *device = (struct virtio_blk *)malloc(sizeof(struct virtio_blk));
 

@@ -11,7 +11,6 @@
 
 #define ROW 25
 #define COL 80
-#define PAGE_SIZE 4096
 
 #define FIRST_12BITS_MASK 0xFFF
 #define PAGE_LEN 1024
@@ -42,11 +41,9 @@ char *vidptr = (char*)(BIOS_VIDEO_PTR | KERNAL_MAP_BASE);
 unsigned int xpos = 0;
 unsigned int ypos = 0;
 
-void kprintf(const char *format, ...);
+
 void itoa(char *buf, unsigned int c, unsigned int base);
 int put(char c);
-void *memcpy(void *dst, const void *src, unsigned long size);
-void *memset(void* dst, int c, unsigned long size);
 
 void switch_to_usermode(uint32_t entry_points, uint32_t esp);
 

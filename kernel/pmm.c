@@ -1,4 +1,6 @@
 #include "pmm.h"
+#include "stdlib.h"
+#include <stdint.h>
 
 // in the bitmap:
 //  1 in page free
@@ -22,28 +24,28 @@ void bitmap_mark_as_used(physaddr_t page) {
 
 void bitmap_mark_as_free(physaddr_t page) {
     page /= PAGE_SIZE;
-    unsigned int a = page / BITS_IN_BYTE;
+    unsigned int index = page / BITS_IN_BYTE;
     int mask = 1 << (page % BITS_IN_BYTE);
 
-    bitmap[a] |= mask; 
+    bitmap[index] |= mask; 
 }
 
 int bitmap_page_status(physaddr_t page) {
     page /= PAGE_SIZE;
-    unsigned int a = page / BITS_IN_BYTE;
+    unsigned int index = page / BITS_IN_BYTE;
     int mask = 1 << (page % BITS_IN_BYTE);
 
-    return (bitmap[a] & mask) == 0; 
+    return (bitmap[index] & mask) == 0; 
 }
 
 physaddr_t bitmap_find_free_page() {
-    int a;
-    int b;
+    uint32_t index;
+    uint32_t jndex;
     
-    for (a = 0; a < PAGE_SIZE; a++) {
-        for (b = 0; b < BITS_IN_BYTE; b++) {
-            if ((bitmap[a] & (1 << b)) != 0) {
-                return (a * BITS_IN_BYTE + b) * PAGE_SIZE;    
+    for (index = 0; index < PAGE_SIZE; index++) {
+        for (jndex = 0; jndex < BITS_IN_BYTE; jndex++) {
+            if ((bitmap[index] & (1 << jndex)) != 0) {
+                return (index * BITS_IN_BYTE + jndex) * PAGE_SIZE;    
             }
         }
     }

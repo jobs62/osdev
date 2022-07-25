@@ -18,4 +18,8 @@ inline void *memset_unsafe(void* dst, int c, unsigned long size) {
     return r;
 }
 
+void kprintf(const char *format, ...);
+
+#define min(a, b) ((a) < (b) ? (a) : (b))
+
 #endif

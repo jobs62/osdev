@@ -229,7 +229,8 @@ uint32_t fat_sector_iterator_next(struct fat_sector_itearator *iter) {
 
 	if (iter->current_cluster != 0 && (iter->current_sector - iter->fat->fat_first_sector_data) % iter->fat->fat_cluster_size == 0) {
 		uint32_t fatoffset = iter->current_cluster * 4;
-		uint32_t ThisFATSecNum, ThisFATSecOffset;
+		uint32_t ThisFATSecNum = 0;
+		uint32_t ThisFATSecOffset = 0;
 
 		switch(iter->fat->fat_type) {
 			case FAT_TYPE_16:

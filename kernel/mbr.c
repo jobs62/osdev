@@ -1,6 +1,7 @@
 #include "bdev.h"
 #include <stdint.h>
 #include "liballoc.h"
+#include "stdlib.h"
 
 struct mbr_entry {
     uint8_t drive_attribute;
