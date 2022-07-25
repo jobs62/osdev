@@ -1,7 +1,7 @@
 #ifndef __STDLIB__
 #define __STDLIB__
 
-#include "stdtype.h"
+#include <stdint.h>
 typedef int (*cmp_func_ext_t)(const void*, const void*, void*);
 
 extern uint8_t __stdlib_unsafe;

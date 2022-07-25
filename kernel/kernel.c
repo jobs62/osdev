@@ -1,7 +1,7 @@
 #include "ata.h"
 #include "multiboot.h"
 #include "io.h"
-#include "stdtype.h"
+#include <stdint.h>
 #include "fat.h"
 #include "vmm.h"
 #include "pmm.h"

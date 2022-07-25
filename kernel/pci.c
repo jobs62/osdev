@@ -1,5 +1,5 @@
 #include "io.h"
-#include "stdtype.h"
+#include <stdint.h>
 #include "pci.h"
 #include "ata.h"
 #include "virtio_blk.h"

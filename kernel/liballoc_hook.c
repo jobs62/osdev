@@ -1,4 +1,4 @@
-#include "stdtype.h"
+#include <stdint.h>
 #include "vmm.h"
 #include "pmm.h"
 

@@ -1,7 +1,7 @@
 #ifndef __PCI__
 #define __PCI__
 
-#include "stdtype.h"
+#include <stdint.h>
 
 struct pci_header {
 	uint16_t vendor_id;

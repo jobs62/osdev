@@ -1,7 +1,7 @@
 #ifndef __FAT__
 #define __FAT__
 
-#include "stdtype.h"
+#include <stdint.h>
 #include "stdlib.h"
 #include "bdev.h"
 

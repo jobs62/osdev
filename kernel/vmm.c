@@ -1,5 +1,5 @@
 #include "bdev.h"
-#include "stdtype.h"
+#include <stdint.h>
 #include "io.h"
 #include "vmm.h"
 #include "pmm.h"
@@ -20,7 +20,7 @@
 
 
 struct vm_entry {
-    void *base;
+    uintptr_t base;
     uint32_t size;
     uint32_t flags;
     struct file *file;
@@ -388,8 +388,8 @@ void dump_vm_map() {
     }
 }
 
-int __check_ptr_userspace(void *ptr, uint32_t len) {
-    for (void *p = ptr; p < ptr + len; p += PAGE_SIZE) {
+int __check_ptr_userspace(const void *ptr, uint32_t len) {
+    for (const void *p = ptr; p < ptr + len; p += PAGE_SIZE) {
         if ((get_flags(p) & VM_PAGE_USER_ACCESS) == 0) {
             return 1;
         }
@@ -398,8 +398,8 @@ int __check_ptr_userspace(void *ptr, uint32_t len) {
     return 0;
 }
 
-int __check_ptr(void *ptr, uint32_t len) {
-    for (void *p = ptr; p < ptr + len; p += PAGE_SIZE) {
+int __check_ptr(const void *ptr, uint32_t len) {
+    for (const void *p = ptr; p < ptr + len; p += PAGE_SIZE) {
         if ((get_flags(p) & VM_PAGE_PRESENT) == 0) {
             return 1;
         }
@@ -408,8 +408,8 @@ int __check_ptr(void *ptr, uint32_t len) {
     return 0;
 }
 
-int __check_ptr_write(void *ptr, uint32_t len) {
-    for (void *p = ptr; p < ptr + len; p += PAGE_SIZE) {
+int __check_ptr_write(const void *ptr, uint32_t len) {
+    for (const void *p = ptr; p < ptr + len; p += PAGE_SIZE) {
         if ((get_flags(p) & (VM_PAGE_PRESENT | VM_PAGE_READ_WRITE)) != (VM_PAGE_PRESENT | VM_PAGE_READ_WRITE)) {
             return 1;
         }

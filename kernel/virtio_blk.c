@@ -1,4 +1,4 @@
-#include "stdtype.h"
+#include <stdint.h>
 #include "pci.h"
 #include "io.h"
 #include "vmm.h"

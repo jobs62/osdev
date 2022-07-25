@@ -1,5 +1,5 @@
 #include "bdev.h"
-#include "stdtype.h"
+#include <stdint.h>
 #include "liballoc.h"
 
 struct mbr_entry {

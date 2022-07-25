@@ -1,7 +1,7 @@
 #ifndef __BDEV__
 #define __BDEV__
 
-#include "stdtype.h"
+#include <stdint.h>
 
 enum bdev_payload_status {
     BDEV_SUCCESS,

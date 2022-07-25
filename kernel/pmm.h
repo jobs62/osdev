@@ -1,10 +1,13 @@
 #ifndef __PMM__
 #define __PMM__
 
-#include "stdtype.h"
+#include <stdint.h>
 
 #define PAGE_LEN 1024
 #define PAGE_SIZE (PAGE_LEN * sizeof(uint32_t))
+
+typedef uint32_t physaddr_t;
+typedef uintptr_t virtaddr_t;
 
 void bitmap_clear(void);
 void bitmap_mark_as_used(physaddr_t page);
