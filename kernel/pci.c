@@ -21,7 +21,7 @@ struct pci_driver {
 };
 
 struct pci_driver pci_drivers[] = {
-    {0x01, 0x01, ata_init},
+    //{0x01, 0x01, ata_init},
 	{0x01, 0x00, virtio_blk_init},
 };
 

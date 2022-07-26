@@ -5,16 +5,13 @@
             "name": "Launch with GDB",
             "type": "cppdbg",
             "request": "launch",
-            "program": "",
-            "cwd": "",
-            "args": [],
-            "targetArchitecture": "",
+            "program": "${workspaceFolder}/kernel/myos.bin.sym",
+            "cwd": "${workspaceFolder}",
             "MIMode": "gdb",
-            "miDebuggerPath": "",
-            "miDebuggerArgs": "",
+            "targetArchitecture": "x86",
             "customLaunchSetupCommands": [
                 {
-                    "text": "target remote localhost:1234",
+                    "text": "target remote :1234",
                     "description": "Connect to QEMU remote debugger"
                 }
             ],

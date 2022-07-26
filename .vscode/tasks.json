@@ -4,7 +4,8 @@
         {
         "label": "Launch QEMU",
         "type": "shell",
-            "command": "make run"
+        "command": "make run",
+        "isBackground": true,
         }   
     ]
 }

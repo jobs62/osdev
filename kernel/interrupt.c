@@ -1,6 +1,7 @@
 #include "io.h"
 #include "interrupt.h"
 #include "vmm.h"
+#include <stdint.h>
 
 struct cpu_state {
     unsigned int edi;
@@ -233,8 +234,8 @@ void setup_idt() {
 
     asm volatile("lidt %0" : : "m" (idt_base));
 
-    outb(PIC1_DATA, 0x00); //mask all interupt execept keyboard
-    outb(PIC2_DATA, 0x00);
+    outb(PIC1_DATA, 0xff); //mask all
+    outb(PIC2_DATA, 0xff);
 }
 
 void PIC_sendEOI(unsigned char irq) {
@@ -292,4 +293,20 @@ void register_interrupt(unsigned int intno, interrupt_type fnc, void *ext) {
     int_reg[intno].fnc = fnc;
     int_reg[intno].ext = ext;
     int_reg[intno].present = 1;
+
+    uint16_t port;
+    uint8_t value;
+    uint8_t irqline;
+    if (intno >= PIC1_START_INTERRUPT && intno < PIC2_START_INTERRUPT) {
+        port = PIC1_DATA;
+        irqline = intno - PIC1_START_INTERRUPT;
+    } else if (intno >= PIC2_START_INTERRUPT) {
+        port = PIC2_DATA;
+        irqline = intno - PIC2_START_INTERRUPT;
+    } else {
+        return;
+    }
+
+    value = inb(port) & ~(1 << irqline);
+    outb(port, value);
 }

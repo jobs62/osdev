@@ -1,0 +1,8 @@
+{
+    "recommendations": [
+        "maziac.asm-code-lens",
+        "llvm-vs-code-extensions.vscode-clangd",
+        "ms-vscode.makefile-tools",
+        "ms-vscode.cpptools"
+    ]
+}

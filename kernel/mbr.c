@@ -1,8 +1,8 @@
 #include "bdev.h"
 #include <stdint.h>
-#include "liballoc.h"
 #include "stdlib.h"
-
+#define _HAVE_SIZE_T
+#include "liballoc.h"
 struct mbr_entry {
     uint8_t drive_attribute;
     uint8_t chs_start[3];
