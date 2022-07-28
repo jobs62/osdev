@@ -209,55 +209,61 @@ void kmain(unsigned long magic, unsigned long addr) {
 #define DEC_BASE 10
 #define KPRINTF_BUF_SIZE 30
 
+#include <stdarg.h>
+
 void kprintf(const char *format, ...) {
-    char **args = (char **) &format;
+    va_list ap;
     char c;
     char *p;
     char buf[KPRINTF_BUF_SIZE];
 
-    args++;
+    va_start(ap, format);
 
     while((c = *format++) != '\0') {
         if (c != '%') {
             put(c);
-        } else {
+            continue;
+        }
+
+        c = *format++;
+        if (c == '\0') {
+            va_end(ap);
+            return;
+        }
+
+        memset(buf, '\0', KPRINTF_BUF_SIZE);
+        if (c >= '0' && c <= '9') {
+            memset(buf, '0', c - '0');
             c = *format++;
-            if (c == '\0') {
-                return;
-            }
+        }
 
-            memset(buf, '\0', KPRINTF_BUF_SIZE);
-            if (c >= '0' && c <= '9') {
-                memset(buf, '0', c - '0');
-                c = *format++;
-            }
+        switch (c) {
+            case 'd':
+                itoa(buf, va_arg(ap, unsigned int), DEC_BASE);
+                p = buf;
+                break;
 
-            switch (c) {
-                case 'd':
-                    itoa(buf, *((unsigned int *)args++), DEC_BASE);
-                    p = buf;
-                    break;
+            case 'h':
+                itoa(buf, va_arg(ap, unsigned int), HEX_BASE);
+                p = buf;
+                break;
 
-                case 'h':
-                    itoa(buf, *((unsigned int *)args++), HEX_BASE);
-                    p = buf;
-                    break;
+            case 's':
+                p = va_arg(ap, char *);
+                break;
 
-                case 's':
-                    p = *args++;
-                    break;
+            default:
+                buf[0] = '\0';
+                p = buf;
+                break;
+        }
 
-                default:
-                    buf[0] = '\0';
-                    p = buf;
-                    break;
-            }
-
-            while (*p != '\0') {
-                put(*p++);
-            }
+        while (*p != '\0') {
+            put(*p++);
         }
     }
+
+    va_end(ap);
 }
 
 
@@ -322,14 +328,6 @@ int put(char c) {
     ++xpos;
 
     return (0);
-}
-
-extern unsigned int tick;
-void sleep(unsigned int t) {
-    tick = t / 55 + 1;
-    while(tick != 0) {
-        asm volatile("hlt");
-    }
 }
 
 void switch_to_usermode(uint32_t entry_points, uint32_t esp) {

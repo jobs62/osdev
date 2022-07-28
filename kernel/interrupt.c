@@ -2,6 +2,7 @@
 #include "interrupt.h"
 #include "vmm.h"
 #include <stdint.h>
+#include "syscall.h"
 
 struct cpu_state {
     unsigned int edi;
@@ -110,9 +111,6 @@ void PIC_remap(int offset1, int offset2);
 
 #define PIC_EOI 0x20 //End of interrupt command
 
-unsigned int tick = 0;
-extern int put(char c);
-
 struct fullstack {
     unsigned int cr3;
     struct cpu_state cpu;
@@ -121,38 +119,10 @@ struct fullstack {
 };
 
 void interrupt_handler(struct fullstack *fstack) {
-    if (fstack->interrupt == 0x20) {
-        if (tick > 0) {
-            tick--;
-        }
-        PIC_sendEOI(fstack->interrupt);
-        return;
-    }
-
     if (fstack->interrupt < 48 && int_reg[fstack->interrupt].present == 1) {
         int_reg[fstack->interrupt].fnc(fstack->interrupt, int_reg[fstack->interrupt].ext);
     } else if(fstack->interrupt == 128) {
-        //syscalls
-        switch (fstack->cpu.eax) {
-            case 42: //write
-                if (__check_ptr_userspace(fstack->cpu.ebx, fstack->cpu.ecx)) {
-                    fstack->cpu.eax = -1;
-                } else {
-                    unsigned int index;
-                    for (index = 0; index < fstack->cpu.ecx; index++) {
-                        put(((char *)fstack->cpu.ebx)[index]);
-                    }
-                    fstack->cpu.eax = index; //return code
-                }
-                break;
-            case 66: //exit
-                kprintf("task finished with return code %d\n", fstack->cpu.ebx);
-                while(1) {}
-                break; //TODO: clean / kill / task switch / whatever
-            default:
-                kprintf("unknown syscall !! (%d)\n", fstack->cpu.eax);
-                break;
-        }
+        fstack->cpu.eax = syscall_handler(fstack->cpu.eax, fstack->cpu.ebx, fstack->cpu.ecx, fstack->cpu.edx, fstack->cpu.esi, fstack->cpu.edi);
     } else {
         kprintf("CS=0x%8h, int_no=0x%8h, err_code=0x%8h\n", fstack->stack.cs, fstack->interrupt, fstack->stack.error_code);
         kprintf("EDI=0x%8h, ESI=0x%8h, EBP=0x%8h\n", fstack->cpu.edi, fstack->cpu.esi, fstack->cpu.ebp);
