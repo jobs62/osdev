@@ -180,8 +180,9 @@ void unmap_page(virtaddr_t virtaddr) {
 
     if (index == PAGE_LEN) {
         kpage_directory[pdindex] = 0;
+        physaddr_t page = get_physaddr(pagetable);
         unmap_page(pagetable);
-        //bitmap_mark_as_free(virtaddr); that is a bug rigth ?
+        bitmap_mark_as_free(page);
     }
 }
 
@@ -219,6 +220,24 @@ void vmm_init() {
     __stdlib_unsafe = 0;
 }
 
+static int is_hint_allowed(uintptr_t hint, size_t size, int flags) {
+    if (flags & VM_MAP_USER && hint + size >= KERNAL_MAP_BASE) {
+        return 0;
+    }
+
+    if (flags & VM_MAP_KERNEL && (hint < 0xC0200000 || hint + size > 0xFFD00000)) {
+        return 0;
+    }
+
+    return 1;
+}
+
+static unsigned long int next = 4; //https://xkcd.com/221/
+uint32_t rdrand_rand(void) {
+    next = next * 1103515245 + 12345;
+    return (unsigned int) (next / 65536) % 32768;
+}
+
 void *add_vm_entry(void *hint, uint32_t size, uint32_t flags, struct file *file, uint32_t offset, uint32_t disksize) {
     //check flags for idotique things
     if ((flags & VM_MAP_USER) && (flags & VM_MAP_KERNEL)) {
@@ -235,6 +254,15 @@ void *add_vm_entry(void *hint, uint32_t size, uint32_t flags, struct file *file,
 
     if ((flags & VM_MAP_FILE) && file == (void*)0) {
         return 0;
+    }
+
+    //constrain hint
+    if (flags & VM_MAP_USER && hint + size >= KERNAL_MAP_BASE) {
+        hint = rdrand_rand() % 0xC0200000;
+    }
+
+    if (flags & VM_MAP_KERNEL && (hint < 0xC0200000 || hint + size > 0xFFD00000)) {
+        hint = rdrand_rand() % (0xFFD00000 - 0xC0200000) + 0xC0200000;
     }
 
     hint = (virtaddr_t)((uint32_t)hint & ~FIRST_12BITS_MASK);
@@ -275,21 +303,26 @@ fit_with_hint:
             return (vm_map[index].base);
         }
 
-        if (vm_map[index].base - (vm_map[index - 1].base + vm_map[index - 1].size) >= size) {
+        uint32_t potential_hint = vm_map[index - 1].base + vm_map[index - 1].size;
+        if (vm_map[index].base - potential_hint >= size && is_hint_allowed(potential_hint, size, flags)) {
             //it fit here, even if it's not the choosen hint
-            lost_space = vm_map[index].base - (vm_map[index - 1].base + vm_map[index - 1].size) - size;
+            lost_space = vm_map[index].base - potential_hint - size;
             if (lost_space < best_lost_space) {
                 best_lost_space = lost_space;
-                best_hint = vm_map[index - 1].base + vm_map[index - 1].size;
+                best_hint = potential_hint;
             }
         }
     }
 
-    hint = best_hint;
-    goto check_with_hint;
+    if (best_hint) {
+        hint = best_hint;
+        goto check_with_hint;
+    }
 
     return (0);
 }
+
+
 
 void rm_vm_entry(void *base) {
     struct vm_entry *vmem = (struct vm_entry *)bsearch_s(base, vm_map, vm_map_size, sizeof(struct vm_entry), vm_entry_cmp, (void *)0);
